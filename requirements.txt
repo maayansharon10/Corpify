@@ -1,2 +1,4 @@
 numpy~=1.23.3
 pandas
+pathlib
+notebook
