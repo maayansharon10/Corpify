@@ -1,5 +1,5 @@
 #!/bin/bash -x
-#SBATCH --time=04:00:00
+#SBATCH --time=02:00:00
 #SBATCH --gres=gpu:a10:1
 #SBATCH --mem-per-cpu=30g
 
@@ -22,4 +22,4 @@ set_env_vars () {
 activate
 set_env_vars
 
-python3 main.py --data-path 'processed_dataset/multi_corp_to_single_regular/data_sample_regular_to_5_corp.csv' --device 'cuda'
+python3 main.py --data-path 'Data/all_sent_raw.csv' --device 'cuda'

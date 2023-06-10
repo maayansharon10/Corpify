@@ -33,8 +33,8 @@ def create_dataset(data_path: str, tokenizer: AutoTokenizer.from_pretrained, tes
     assert os.path.exists(data_path)
 
     data = pd.read_csv(data_path)
-    data.columns.values[1] = 'source'
-    data.columns.values[2] = 'target'
+    data.columns.values[0] = 'source'
+    data.columns.values[1] = 'target'
     data.index.name = 'id'
     data.reset_index(inplace=True)
 
@@ -98,13 +98,23 @@ def train_bart_detox(data_path: str, training_args: TrainingArguments, device: s
     preds = tokenizer.batch_decode(preds, skip_special_tokens=True)
     labels = tokenizer.batch_decode(predictions.label_ids, skip_special_tokens=True)
 
-    now = datetime.now()
-    with open(os.path.join(training_args.output_dir, f'results_{now}.txt'), 'w') as f:
+    now = str(datetime.now()).replace(' ', '_').replace(':', '_').split('.')[0]
+
+    if not os.path.exists(training_args.output_dir):
+        os.makedirs(training_args.output_dir)
+
+    output_path = os.path.join(training_args.output_dir, f'results_{now}.txt')
+    with open(output_path, 'w') as f:
+        f.write(f'PREDICTED & TARGET\n\n')
         for i in range(len(preds)):
             src = dataset['test'][i]['input_ids']
             src = tokenizer.decode(src, skip_special_tokens=True)
             f.write(f'src: {src}\npred: {preds[i]}\ntarget: {labels[i]}\n')
-            f.write(f'metrics: {predictions.metrics}')
+            f.write('-' * 100 + '\n')
+        f.write('\n\n\nMETRICS\n\n')
+        f.write(f'metrics: {predictions.metrics}')
+
+    print(f'Output (metrics & predictions) saved to: {output_path}')
 
 
 def main():
