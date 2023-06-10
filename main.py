@@ -1,4 +1,6 @@
 import os
+from datetime import datetime
+
 import pandas as pd
 from transformers import BartForConditionalGeneration, AutoTokenizer, TrainingArguments, Trainer, EvalPrediction
 from datasets import Dataset
@@ -77,7 +79,6 @@ def train_bart_detox(data_path: str, training_args: TrainingArguments, device: s
     model = BartForConditionalGeneration.from_pretrained(model_name).to(device)
 
     dataset = create_dataset(data_path, tokenizer, test_size)
-
     # Train model
     trainer = Trainer(
         model=model,
@@ -90,8 +91,6 @@ def train_bart_detox(data_path: str, training_args: TrainingArguments, device: s
 
     trainer.train()
 
-    print(dataset['test'][0])
-
     model.eval()
     predictions = trainer.predict(dataset['test'])
     preds = predictions.predictions[0]
@@ -99,25 +98,27 @@ def train_bart_detox(data_path: str, training_args: TrainingArguments, device: s
     preds = tokenizer.batch_decode(preds, skip_special_tokens=True)
     labels = tokenizer.batch_decode(predictions.label_ids, skip_special_tokens=True)
 
-    for i in range(len(preds)):
-        src = dataset['test'][i]['input_ids']
-        src = tokenizer.decode(src, skip_special_tokens=True)
-        print(f'src: {src}\npred: {preds[i]}\ntarget: {labels[i]}\n')
-
-    print(f'metrics: {predictions.metrics}')
+    now = datetime.now()
+    with open(os.path.join(training_args.output_dir, f'results_{now}.txt'), 'w') as f:
+        for i in range(len(preds)):
+            src = dataset['test'][i]['input_ids']
+            src = tokenizer.decode(src, skip_special_tokens=True)
+            f.write(f'src: {src}\npred: {preds[i]}\ntarget: {labels[i]}\n')
+            f.write(f'metrics: {predictions.metrics}')
 
 
 def main():
     parser = argparse.ArgumentParser(description="BART Detox Training")
     parser.add_argument("--data-path", type=str, help="Path to the input data file")
-    parser.add_argument("--output-dir", type=str, help="Path to the output directory")
+    parser.add_argument("--output-dir", type=str, help="Path to the output directory", default='results')
+    parser.add_argument("--device", type=str, help="Either cpu or cuda", default='cpu')
 
     args = parser.parse_args()
     training_args = TrainingArguments(
         output_dir=args.output_dir,
     )
 
-    train_bart_detox(args.data_path, training_args)
+    train_bart_detox(args.data_path, training_args, device=args.device)
 
 
 if __name__ == '__main__':
