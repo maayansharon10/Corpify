@@ -1,6 +1,7 @@
 import os
 from datetime import datetime
 
+import numpy as np
 import pandas as pd
 from transformers import BartForConditionalGeneration, AutoTokenizer, TrainingArguments, Trainer, EvalPrediction
 from datasets import Dataset
@@ -10,21 +11,25 @@ import argparse
 
 
 def get_compute_metrics(tokenizer: AutoTokenizer.from_pretrained):
-    # bert_score_metric = load("bertscore")
+    bert_score_metric = load("bertscore")
     rouge_metric = load('rouge')  # Wraps up several variations of ROUGE, including ROUGE-L.
     blue_metric = load('sacrebleu')  # SacreBLEU is a standard BLEU implementation that outputs the BLEU score.
+    meteor_metric = load('meteor')
 
     def compute_metrics(p: EvalPrediction):
         preds = p.predictions[0] if isinstance(p.predictions, tuple) else p.predictions
         preds = preds.argmax(-1)
         preds = tokenizer.batch_decode(preds, skip_special_tokens=True)
         references = tokenizer.batch_decode(p.label_ids, skip_special_tokens=True)
-        # bert_score = bert_score_metric.compute(predictions=preds, references=references, lang='en')
+        bert_score = bert_score_metric.compute(predictions=preds, references=references, lang='en')
         rouge = rouge_metric.compute(predictions=preds, references=references)
         blue = blue_metric.compute(predictions=preds, references=references)
-        # return {bert_score_metric.name: bert_score['f1'].mean(), rouge_metric.name: rouge['rougeL'].mean(),
-        #         blue_metric.name: blue['score']}
-        return {blue_metric.name: blue['score'], rouge_metric.name: rouge['rougeL'].mean()}
+        meteor = meteor_metric.compute(predictions=preds, references=references)
+
+        return {bert_score_metric.name: np.array(bert_score['f1']).mean(),
+                rouge_metric.name: rouge['rougeL'],
+                blue_metric.name: blue['score'],
+                meteor_metric.name: meteor['meteor']}
 
     return compute_metrics
 
