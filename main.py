@@ -100,7 +100,7 @@ def create_dataset(data_path: str, tokenizer: AutoTokenizer.from_pretrained, tes
 
 
 def train_model(model_obj, data_path: str, training_args: TrainingArguments, device: str = 'cpu',
-                test_size: float = 0.2):
+                test_size: float = 0.1):
     assert device in ['cpu', 'cuda']
 
     tokenizer = model_obj.tokenizer
@@ -131,7 +131,7 @@ def train_model(model_obj, data_path: str, training_args: TrainingArguments, dev
     if not os.path.exists(training_args.output_dir):
         os.makedirs(training_args.output_dir)
 
-    output_path = os.path.join(training_args.output_dir, f'results_{now}.txt')
+    output_path = os.path.join(training_args.output_dir, f'results_{model_obj.name.split("/")[1]}_{now}.txt')
     with open(output_path, 'w') as f:
         f.write(f'PREDICTED & TARGET\n\n')
         for i in range(len(preds)):
