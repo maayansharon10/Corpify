@@ -107,14 +107,9 @@ def eval_model(trainer: Trainer, test_dataset: Dataset, model_name: str, is_zero
     preds = trainer.tokenizer.batch_decode(preds, skip_special_tokens=True)
     labels = trainer.tokenizer.batch_decode(predictions.label_ids, skip_special_tokens=True)
 
-    now = str(datetime.now()).replace(' ', '_').replace(':', '_').split('.')[0]
-
-    if not os.path.exists(trainer.args.output_dir):
-        os.makedirs(trainer.args.output_dir)
-
-    output_file_name = f'{model_name}_{now}.txt'
+    output_file_name = f'{model_name}.txt'
     if is_zero_shot:
-        f'{model_name}_zero_{now}.txt'
+        output_file_name = f'{model_name}_zero.txt'
 
     output_path = os.path.join(trainer.args.output_dir, output_file_name)
     with open(output_path, 'w') as f:
@@ -131,7 +126,7 @@ def eval_model(trainer: Trainer, test_dataset: Dataset, model_name: str, is_zero
 
 
 def train_model(model_obj, data_path: str, training_args: TrainingArguments, device: str = 'cpu',
-                test_size: float = 0.1):
+                test_size: float = 0.5):
     assert device in ['cpu', 'cuda']
 
     tokenizer = model_obj.tokenizer
@@ -148,7 +143,8 @@ def train_model(model_obj, data_path: str, training_args: TrainingArguments, dev
         tokenizer=tokenizer,
     )
 
-    eval_model(trainer, dataset['test'], model_obj.model_name.split('/')[1], is_zero_shot=True)  # Evaluate model in zero-shot settings
+    eval_model(trainer, dataset['test'], model_obj.model_name.split('/')[1],
+               is_zero_shot=True)  # Evaluate model in zero-shot settings
 
     trainer.train()
 
@@ -168,8 +164,17 @@ def main():
                         choices=[bart_detox_name, t5_form_name, t5_detox_name])
 
     args = parser.parse_args()
+
+    now = str(datetime.now()).replace(' ', '_').replace(':', '_').split('.')[0]
+
+    if not os.path.exists(args.output_dir):
+        os.makedirs(args.output_dir)
+
+    output_dir = os.path.join(args.output_dir, now)
+    os.makedirs(output_dir, exist_ok=True)
+
     training_args = TrainingArguments(
-        output_dir=args.output_dir,
+        output_dir=output_dir,
     )
 
     model_obj = None
