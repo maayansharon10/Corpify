@@ -99,6 +99,37 @@ def create_dataset(data_path: str, tokenizer: AutoTokenizer.from_pretrained, tes
     return datasets
 
 
+def eval_model(trainer: Trainer, test_dataset: Dataset, model_name: str, is_zero_shot=False):
+    trainer.model.eval()
+    predictions = trainer.predict(test_dataset)
+    preds = predictions.predictions[0]
+    preds = preds.argmax(-1)
+    preds = trainer.tokenizer.batch_decode(preds, skip_special_tokens=True)
+    labels = trainer.tokenizer.batch_decode(predictions.label_ids, skip_special_tokens=True)
+
+    now = str(datetime.now()).replace(' ', '_').replace(':', '_').split('.')[0]
+
+    if not os.path.exists(trainer.args.output_dir):
+        os.makedirs(trainer.args.output_dir)
+
+    output_file_name = f'{model_name}_{now}.txt'
+    if is_zero_shot:
+        f'{model_name}_zero_{now}.txt'
+
+    output_path = os.path.join(trainer.args.output_dir, output_file_name)
+    with open(output_path, 'w') as f:
+        f.write(f'PREDICTED & TARGET\n\n')
+        for i in range(len(preds)):
+            src = test_dataset[i]['input_ids']
+            src = trainer.tokenizer.decode(src, skip_special_tokens=True)
+            f.write(f'src: {src}\npred: {preds[i]}\ntarget: {labels[i]}\n')
+            f.write('-' * 100 + '\n')
+        f.write('\n\n\nMETRICS\n\n')
+        f.write(f'metrics: {predictions.metrics}')
+
+    print(f'Output (metrics & predictions) saved to: {output_path}')
+
+
 def train_model(model_obj, data_path: str, training_args: TrainingArguments, device: str = 'cpu',
                 test_size: float = 0.1):
     assert device in ['cpu', 'cuda']
@@ -117,32 +148,11 @@ def train_model(model_obj, data_path: str, training_args: TrainingArguments, dev
         tokenizer=tokenizer,
     )
 
+    eval_model(trainer, dataset['test'], model_obj.model_name.split('/')[1], is_zero_shot=True)  # Evaluate model in zero-shot settings
+
     trainer.train()
 
-    model.eval()
-    predictions = trainer.predict(dataset['test'])
-    preds = predictions.predictions[0]
-    preds = preds.argmax(-1)
-    preds = tokenizer.batch_decode(preds, skip_special_tokens=True)
-    labels = tokenizer.batch_decode(predictions.label_ids, skip_special_tokens=True)
-
-    now = str(datetime.now()).replace(' ', '_').replace(':', '_').split('.')[0]
-
-    if not os.path.exists(training_args.output_dir):
-        os.makedirs(training_args.output_dir)
-
-    output_path = os.path.join(training_args.output_dir, f'results_{model_obj.name.split("/")[1]}_{now}.txt')
-    with open(output_path, 'w') as f:
-        f.write(f'PREDICTED & TARGET\n\n')
-        for i in range(len(preds)):
-            src = dataset['test'][i]['input_ids']
-            src = tokenizer.decode(src, skip_special_tokens=True)
-            f.write(f'src: {src}\npred: {preds[i]}\ntarget: {labels[i]}\n')
-            f.write('-' * 100 + '\n')
-        f.write('\n\n\nMETRICS\n\n')
-        f.write(f'metrics: {predictions.metrics}')
-
-    print(f'Output (metrics & predictions) saved to: {output_path}')
+    return trainer, dataset['test']
 
 
 def main():
@@ -170,7 +180,8 @@ def main():
     elif args.model_name == t5_detox_name:
         model_obj = T5Detox()
 
-    train_model(model_obj, args.data_path, training_args, device=args.device)
+    trainer, test_dataset = train_model(model_obj, args.data_path, training_args, device=args.device)
+    eval_model(trainer, test_dataset, args.model_name)
 
 
 if __name__ == '__main__':
