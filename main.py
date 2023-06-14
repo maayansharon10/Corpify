@@ -3,15 +3,38 @@ from datetime import datetime
 
 import numpy as np
 import pandas as pd
-from transformers import BartForConditionalGeneration, AutoTokenizer, TrainingArguments, Trainer, EvalPrediction
+from transformers import BartForConditionalGeneration, AutoTokenizer, TrainingArguments, Trainer, EvalPrediction, \
+    AutoModelForSeq2SeqLM
 from datasets import Dataset
 from sklearn.model_selection import train_test_split
 from evaluate import load
 import argparse
+from dataclasses import dataclass
+
+
+@dataclass
+class BartDetox:
+    model_name: str = 'SkolkovoInstitute/bart-base-detox'
+    tokenizer: AutoTokenizer.from_pretrained = AutoTokenizer.from_pretrained(model_name)
+    model: BartForConditionalGeneration.from_pretrained = BartForConditionalGeneration.from_pretrained(model_name)
+
+
+@dataclass
+class T5Formality:
+    model_name: str = 'Isotonic/informal_to_formal'
+    tokenizer: AutoTokenizer.from_pretrained = AutoTokenizer.from_pretrained(model_name)
+    model: AutoModelForSeq2SeqLM.from_pretrained = AutoModelForSeq2SeqLM.from_pretrained(model_name)
+
+
+@dataclass
+class T5Detox:
+    model_name: str = 's-nlp/t5-paranmt-detox'
+    tokenizer: AutoTokenizer.from_pretrained = AutoTokenizer.from_pretrained(model_name)
+    model: AutoModelForSeq2SeqLM.from_pretrained = AutoModelForSeq2SeqLM.from_pretrained(model_name)
 
 
 def get_compute_metrics(tokenizer: AutoTokenizer.from_pretrained):
-    bert_score_metric = load("bertscore")
+    bert_score_metric = load('bertscore')
     rouge_metric = load('rouge')  # Wraps up several variations of ROUGE, including ROUGE-L.
     blue_metric = load('sacrebleu')  # SacreBLEU is a standard BLEU implementation that outputs the BLEU score.
     meteor_metric = load('meteor')
@@ -76,12 +99,12 @@ def create_dataset(data_path: str, tokenizer: AutoTokenizer.from_pretrained, tes
     return datasets
 
 
-def train_bart_detox(data_path: str, training_args: TrainingArguments, device: str = 'cpu', test_size: float = 0.2):
+def train_model(model_obj, data_path: str, training_args: TrainingArguments, device: str = 'cpu',
+                test_size: float = 0.2):
     assert device in ['cpu', 'cuda']
 
-    model_name = 'SkolkovoInstitute/bart-base-detox'
-    tokenizer = AutoTokenizer.from_pretrained(model_name)
-    model = BartForConditionalGeneration.from_pretrained(model_name).to(device)
+    tokenizer = model_obj.tokenizer
+    model = model_obj.model
 
     dataset = create_dataset(data_path, tokenizer, test_size)
     # Train model
@@ -123,17 +146,31 @@ def train_bart_detox(data_path: str, training_args: TrainingArguments, device: s
 
 
 def main():
-    parser = argparse.ArgumentParser(description="BART Detox Training")
-    parser.add_argument("--data-path", type=str, help="Path to the input data file")
-    parser.add_argument("--output-dir", type=str, help="Path to the output directory", default='results')
-    parser.add_argument("--device", type=str, help="Either cpu or cuda", default='cpu')
+    t5_form_name = 't5-formality'
+    t5_detox_name = 't5-detox'
+    bart_detox_name = 'bart-detox'
+
+    parser = argparse.ArgumentParser(description='BART Detox Training')
+    parser.add_argument('--data-path', type=str, help='Path to the input data file')
+    parser.add_argument('--output-dir', type=str, help='Path to the output directory', default='results')
+    parser.add_argument('--device', type=str, help='Either cpu or cuda', default='cpu')
+    parser.add_argument('--model-name', type=str, help='Name of the model to use',
+                        choices=[bart_detox_name, t5_form_name, t5_detox_name])
 
     args = parser.parse_args()
     training_args = TrainingArguments(
         output_dir=args.output_dir,
     )
 
-    train_bart_detox(args.data_path, training_args, device=args.device)
+    model_obj = None
+    if args.model_name == t5_form_name:
+        model_obj = T5Formality()
+    elif args.model_name == bart_detox_name:
+        model_obj = BartDetox()
+    elif args.model_name == t5_detox_name:
+        model_obj = T5Detox()
+
+    train_model(model_obj, args.data_path, training_args, device=args.device)
 
 
 if __name__ == '__main__':

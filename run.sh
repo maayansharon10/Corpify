@@ -1,6 +1,6 @@
 #!/bin/bash -x
 #SBATCH --time=02:00:00
-#SBATCH --gres=gpu:a10:1
+#SBATCH --gres=gpu:a5000:1
 #SBATCH --mem-per-cpu=30g
 
 echo $PWD
@@ -22,4 +22,4 @@ set_env_vars () {
 activate
 set_env_vars
 
-python3 main.py --data-path 'Data/all_sent_raw.csv' --device 'cuda'
+python3 main.py --data-path 'Data/all_sent_raw.csv' --device 'cuda' --model-name 't5-detox'
