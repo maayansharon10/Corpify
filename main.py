@@ -57,7 +57,7 @@ def get_compute_metrics(tokenizer: AutoTokenizer.from_pretrained):
     return compute_metrics
 
 
-def create_dataset(data_path: str, tokenizer: AutoTokenizer.from_pretrained, test_size: float) -> dict:
+def create_datasets(data_path: str, test_size: float) -> dict:
     assert os.path.exists(data_path)
 
     data = pd.read_csv(data_path)
@@ -84,28 +84,21 @@ def create_dataset(data_path: str, tokenizer: AutoTokenizer.from_pretrained, tes
     datasets = {'train': None, 'test': None}
 
     for split_name, split_data in splits.items():
-        # Tokenize data
-        src_encoding = tokenizer(split_data['source'].tolist(), truncation=True, padding=True)
-        target_encoding = tokenizer(split_data['target'].tolist(), truncation=True, padding=True)
-
         # Create dataset
-        dataset = Dataset.from_dict({'input_ids': src_encoding['input_ids'],
-                                     'attention_mask': src_encoding['attention_mask'],
-                                     'decoder_input_ids': target_encoding['input_ids'],
-                                     'labels': target_encoding['input_ids']})
-        dataset.set_format(type='torch', columns=['input_ids', 'attention_mask', 'labels'])
+        dataset = Dataset.from_dict({'source': split_data['source'],
+                                     'target': split_data['target']})
+        dataset.set_format(type='torch', columns=['source', 'target'])
         datasets[split_name] = dataset
 
     return datasets
 
 
-def eval_model(trainer: Trainer, test_dataset: Dataset, model_name: str, is_zero_shot=False):
+def eval_model(trainer: Trainer, model_name: str, is_zero_shot=False):
     trainer.model.eval()
-    predictions = trainer.predict(test_dataset)
+    predictions = trainer.predict(trainer.eval_dataset)
     preds = predictions.predictions[0]
     preds = preds.argmax(-1)
     preds = trainer.tokenizer.batch_decode(preds, skip_special_tokens=True)
-    labels = trainer.tokenizer.batch_decode(predictions.label_ids, skip_special_tokens=True)
 
     output_file_name = f'{model_name}.txt'
     if is_zero_shot:
@@ -115,9 +108,9 @@ def eval_model(trainer: Trainer, test_dataset: Dataset, model_name: str, is_zero
     with open(output_path, 'w') as f:
         f.write(f'PREDICTED & TARGET\n\n')
         for i in range(len(preds)):
-            src = test_dataset[i]['input_ids']
-            src = trainer.tokenizer.decode(src, skip_special_tokens=True)
-            f.write(f'src: {src}\npred: {preds[i]}\ntarget: {labels[i]}\n')
+            src = trainer.eval_dataset[i]['source']
+            target = trainer.eval_dataset[i]['target']
+            f.write(f'src: {src}\npred: {preds[i]}\ntarget: {target}\n')
             f.write('-' * 100 + '\n')
         f.write('\n\n\nMETRICS\n\n')
         f.write(f'metrics: {predictions.metrics}')
@@ -126,29 +119,43 @@ def eval_model(trainer: Trainer, test_dataset: Dataset, model_name: str, is_zero
 
 
 def train_model(model_obj, data_path: str, training_args: TrainingArguments, device: str = 'cpu',
-                test_size: float = 0.5):
+                test_size: float = 0.1):
     assert device in ['cpu', 'cuda']
 
     tokenizer = model_obj.tokenizer
     model = model_obj.model
 
-    dataset = create_dataset(data_path, tokenizer, test_size)
+    def preprocess_dataset(dataset: Dataset):
+        source_texts = dataset['source']
+        model_inputs = tokenizer(source_texts, truncation=True, padding='max_length', max_length=128)
+
+        target_texts = dataset['target']
+        with tokenizer.as_target_tokenizer():
+            targets = tokenizer(target_texts, truncation=True, padding='max_length', max_length=128)
+
+        model_inputs['labels'] = targets['input_ids']
+        return model_inputs
+
+    data = create_datasets(data_path, test_size)
+    train_set = data['train'].map(preprocess_dataset, batched=True)
+    test_set = data['test'].map(preprocess_dataset, batched=True)
+    test_set = test_set.remove_columns('labels')
+
     # Train model
     trainer = Trainer(
         model=model,
         args=training_args,
-        train_dataset=dataset['train'],
-        eval_dataset=dataset['test'],
+        train_dataset=train_set,
+        eval_dataset=test_set,
         compute_metrics=get_compute_metrics(tokenizer),
         tokenizer=tokenizer,
     )
 
-    eval_model(trainer, dataset['test'], model_obj.model_name.split('/')[1],
+    eval_model(trainer, model_obj.model_name.split('/')[1],
                is_zero_shot=True)  # Evaluate model in zero-shot settings
 
     trainer.train()
-
-    return trainer, dataset['test']
+    return trainer
 
 
 def main():
@@ -185,8 +192,8 @@ def main():
     elif args.model_name == t5_detox_name:
         model_obj = T5Detox()
 
-    trainer, test_dataset = train_model(model_obj, args.data_path, training_args, device=args.device)
-    eval_model(trainer, test_dataset, args.model_name)
+    trainer = train_model(model_obj, args.data_path, training_args, device=args.device)
+    eval_model(trainer, args.model_name)
 
 
 if __name__ == '__main__':
