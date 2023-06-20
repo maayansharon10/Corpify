@@ -69,28 +69,25 @@ class RephrasingModel(ABC):
     def create_trainer(self):
         pass
 
-    def get_compute_metrics(self):
+    def compute_metrics(self, p: EvalPrediction, eval_dataset: Dataset):
         bert_score_metric = load('bertscore')
         rouge_metric = load('rouge')  # Wraps up several variations of ROUGE, including ROUGE-L.
         blue_metric = load('sacrebleu')  # SacreBLEU is a standard BLEU implementation that outputs the BLEU score.
         meteor_metric = load('meteor')
 
-        def compute_metrics(p: EvalPrediction):
-            preds = p.predictions[0] if isinstance(p.predictions, tuple) else p.predictions
-            preds = preds.argmax(-1)
-            preds = self.tokenizer.batch_decode(preds, skip_special_tokens=True)
-            references = self.tokenizer.batch_decode(p.label_ids, skip_special_tokens=True)
-            bert_score = bert_score_metric.compute(predictions=preds, references=references, lang='en')
-            rouge = rouge_metric.compute(predictions=preds, references=references)
-            blue = blue_metric.compute(predictions=preds, references=references)
-            meteor = meteor_metric.compute(predictions=preds, references=references)
+        preds = p.predictions[0]
+        preds = preds.argmax(-1)
+        preds = self.tokenizer.batch_decode(preds, skip_special_tokens=True)
+        references = eval_dataset['target']
+        bert_score = bert_score_metric.compute(predictions=preds, references=references, lang='en')
+        rouge = rouge_metric.compute(predictions=preds, references=references)
+        blue = blue_metric.compute(predictions=preds, references=references)
+        meteor = meteor_metric.compute(predictions=preds, references=references)
 
-            return {bert_score_metric.name: np.array(bert_score['f1']).mean(),
-                    rouge_metric.name: rouge['rougeL'],
-                    blue_metric.name: blue['score'],
-                    meteor_metric.name: meteor['meteor']}
-
-        return compute_metrics
+        return {bert_score_metric.name: np.array(bert_score['f1']).mean(),
+                rouge_metric.name: rouge['rougeL'],
+                blue_metric.name: blue['score'],
+                meteor_metric.name: meteor['meteor']}
 
     def train(self, trainer):
         self.evaluate(trainer, is_zero_shot=True)
@@ -99,6 +96,7 @@ class RephrasingModel(ABC):
     def evaluate(self, trainer, is_zero_shot=False):
         trainer.model.eval()
         predictions = trainer.predict(trainer.eval_dataset)
+        costume_metrics = self.compute_metrics(predictions, trainer.eval_dataset)
         preds = predictions.predictions[0]
         preds = preds.argmax(-1)
         preds = self.tokenizer.batch_decode(preds, skip_special_tokens=True)
@@ -117,7 +115,8 @@ class RephrasingModel(ABC):
                 f.write(f'src: {src}\npred: {preds[i]}\ntarget: {target}\n')
                 f.write('-' * 100 + '\n')
             f.write('\n\n\nMETRICS\n\n')
-            f.write(f'metrics: {predictions.metrics}')
+            f.write(f'metrics: {predictions.metrics}\n')
+            f.write(f'costume metrics: {costume_metrics}\n')
 
         print(f'Output (metrics & predictions) saved to: {output_path}')
 
@@ -151,6 +150,7 @@ class BartDetox(RephrasingModel):
         test_set = test_set.remove_columns('labels')
 
         training_args = TrainingArguments(
+            evaluation_strategy="steps",
             output_dir=self.output_dir,
         )
 
@@ -160,7 +160,6 @@ class BartDetox(RephrasingModel):
             args=training_args,
             train_dataset=train_set,
             eval_dataset=test_set,
-            compute_metrics=self.get_compute_metrics(),
             tokenizer=self.tokenizer,
         )
 
