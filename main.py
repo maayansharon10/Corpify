@@ -3,7 +3,8 @@ from datetime import datetime
 
 import numpy as np
 import pandas as pd
-from transformers import BartForConditionalGeneration, AutoTokenizer, TrainingArguments, Trainer, EvalPrediction
+from transformers import BartForConditionalGeneration, AutoTokenizer, TrainingArguments, Trainer, EvalPrediction, \
+    Seq2SeqTrainingArguments, AutoModelForSeq2SeqLM, Seq2SeqTrainer
 from datasets import Dataset
 from sklearn.model_selection import train_test_split
 from evaluate import load
@@ -58,7 +59,6 @@ class RephrasingModel(ABC):
         assert max_input_length > 0
 
         self.model_name: str = model_name
-        self.tokenizer = AutoTokenizer.from_pretrained(self.model_name)
         self.device: str = device
         self.data_path: str = data_path
         self.test_size: float = test_size
@@ -69,15 +69,19 @@ class RephrasingModel(ABC):
     def create_trainer(self):
         pass
 
-    def compute_metrics(self, p: EvalPrediction, eval_dataset: Dataset):
+    def decode_preds(self, p: EvalPrediction, tokenizer):
+        preds = p.predictions[0] if isinstance(p.predictions, tuple) else p.predictions
+        preds = preds.argmax(-1)
+        preds = tokenizer.batch_decode(preds, skip_special_tokens=True)
+        return preds
+
+    def compute_metrics(self, p: EvalPrediction, eval_dataset: Dataset, tokenizer):
         bert_score_metric = load('bertscore')
         rouge_metric = load('rouge')  # Wraps up several variations of ROUGE, including ROUGE-L.
         blue_metric = load('sacrebleu')  # SacreBLEU is a standard BLEU implementation that outputs the BLEU score.
         meteor_metric = load('meteor')
 
-        preds = p.predictions[0]
-        preds = preds.argmax(-1)
-        preds = self.tokenizer.batch_decode(preds, skip_special_tokens=True)
+        preds = self.decode_preds(p, tokenizer)
         references = eval_dataset['target']
         bert_score = bert_score_metric.compute(predictions=preds, references=references, lang='en')
         rouge = rouge_metric.compute(predictions=preds, references=references)
@@ -89,17 +93,31 @@ class RephrasingModel(ABC):
                 blue_metric.name: blue['score'],
                 meteor_metric.name: meteor['meteor']}
 
+    def get_data_preprocessing_func(self, tokenizer):
+        def preprocess_dataset(dataset: Dataset):
+            source_texts = dataset['source']
+            model_inputs = tokenizer(source_texts, truncation=True, padding='max_length',
+                                     max_length=self.max_input_length)
+
+            target_texts = dataset['target']
+            with tokenizer.as_target_tokenizer():
+                targets = tokenizer(target_texts, truncation=True, padding='max_length',
+                                    max_length=self.max_input_length)
+
+            model_inputs['labels'] = targets['input_ids']
+            return model_inputs
+
+        return preprocess_dataset
+
     def train(self, trainer):
         self.evaluate(trainer, is_zero_shot=True)
         trainer.train()
 
     def evaluate(self, trainer, is_zero_shot=False):
         trainer.model.eval()
-        predictions = trainer.predict(trainer.eval_dataset)
-        costume_metrics = self.compute_metrics(predictions, trainer.eval_dataset)
-        preds = predictions.predictions[0]
-        preds = preds.argmax(-1)
-        preds = self.tokenizer.batch_decode(preds, skip_special_tokens=True)
+        p = trainer.predict(trainer.eval_dataset)
+        custome_metrics = self.compute_metrics(p, trainer.eval_dataset, trainer.tokenizer)
+        preds = self.decode_preds(p, trainer.tokenizer)
 
         model_name = self.model_name.split('/')[1]
         output_file_name = f'{model_name}.txt'
@@ -115,8 +133,8 @@ class RephrasingModel(ABC):
                 f.write(f'src: {src}\npred: {preds[i]}\ntarget: {target}\n')
                 f.write('-' * 100 + '\n')
             f.write('\n\n\nMETRICS\n\n')
-            f.write(f'metrics: {predictions.metrics}\n')
-            f.write(f'costume metrics: {costume_metrics}\n')
+            f.write(f'metrics: {p.metrics}\n')
+            f.write(f'costume metrics: {custome_metrics}\n')
 
         print(f'Output (metrics & predictions) saved to: {output_path}')
 
@@ -130,27 +148,14 @@ class BartDetox(RephrasingModel):
 
     def create_trainer(self):
         model = BartForConditionalGeneration.from_pretrained(self.model_name).to(self.device)
-
-        def preprocess_dataset(dataset: Dataset):
-            source_texts = dataset['source']
-            model_inputs = self.tokenizer(source_texts, truncation=True, padding='max_length',
-                                          max_length=self.max_input_length)
-
-            target_texts = dataset['target']
-            with self.tokenizer.as_target_tokenizer():
-                targets = self.tokenizer(target_texts, truncation=True, padding='max_length',
-                                         max_length=self.max_input_length)
-
-            model_inputs['labels'] = targets['input_ids']
-            return model_inputs
+        tokenizer = AutoTokenizer.from_pretrained(self.model_name)
 
         data = create_datasets(self.data_path, self.test_size)
-        train_set = data['train'].map(preprocess_dataset, batched=True)
-        test_set = data['test'].map(preprocess_dataset, batched=True)
+        train_set = data['train'].map(self.get_data_preprocessing_func(tokenizer), batched=True)
+        test_set = data['test'].map(self.get_data_preprocessing_func(tokenizer), batched=True)
         test_set = test_set.remove_columns('labels')
 
         training_args = TrainingArguments(
-            evaluation_strategy="steps",
             output_dir=self.output_dir,
         )
 
@@ -160,7 +165,7 @@ class BartDetox(RephrasingModel):
             args=training_args,
             train_dataset=train_set,
             eval_dataset=test_set,
-            tokenizer=self.tokenizer,
+            tokenizer=tokenizer,
         )
 
         return trainer
@@ -172,15 +177,74 @@ class BartDetox(RephrasingModel):
         super().evaluate(self.trainer, is_zero_shot)
 
 
+class T5Model(RephrasingModel):
+    def __init__(self, name: str, device: str, data_path: str, test_size: float, output_dir: str,
+                 max_input_length: int):
+        super().__init__(name, device, data_path, test_size, output_dir,
+                         max_input_length)
+
+        self.trainer = self.create_trainer()
+
+    def decode_preds(self, p: EvalPrediction, tokenizer):
+        preds = p.predictions[0] if isinstance(p.predictions, tuple) else p.predictions
+        preds = tokenizer.batch_decode(preds, skip_special_tokens=True)
+        return preds
+
+    def create_trainer(self):
+        tokenizer = AutoTokenizer.from_pretrained(self.model_name)
+        model = AutoModelForSeq2SeqLM.from_pretrained(self.model_name).to(self.device)
+
+        data = create_datasets(self.data_path, self.test_size)
+        train_set = data['train'].map(self.get_data_preprocessing_func(tokenizer), batched=True)
+        test_set = data['test'].map(self.get_data_preprocessing_func(tokenizer), batched=True)
+
+        args = Seq2SeqTrainingArguments(
+            output_dir=self.output_dir,
+            fp16=True,
+            predict_with_generate=True,
+        )
+
+        trainer = Seq2SeqTrainer(
+            model=model,
+            args=args,
+            train_dataset=train_set,
+            eval_dataset=test_set,
+            tokenizer=tokenizer,
+        )
+
+        return trainer
+
+    def train_t5(self):
+        super().train(self.trainer)
+
+    def evaluate_t5(self, is_zero_shot=False):
+        super().evaluate(self.trainer, is_zero_shot)
+
+
+class T5Formality(T5Model):
+    def __init__(self, device: str, data_path: str, test_size: float, output_dir: str, max_input_length: int):
+        super().__init__('Isotonic/informal_to_formal', device, data_path, test_size, output_dir,
+                         max_input_length)
+
+
+class T5Detox(T5Model):
+    def __init__(self, device: str, data_path: str, test_size: float, output_dir: str, max_input_length: int):
+        super().__init__('s-nlp/t5-paranmt-detox', device, data_path, test_size, output_dir, max_input_length)
+
+        self.trainer = self.create_trainer()
+
+
 def main():
     bart_detox_name = 'bart-detox'
+    t5_formality_name = 't5-formality'
+    t5_detox_name = 't5-detox'
 
     parser = argparse.ArgumentParser(description='BART Detox Training')
     parser.add_argument('--data-path', type=str, help='Path to the input data file')
     parser.add_argument('--output-dir', type=str, help='Path to the output directory', default='results')
     parser.add_argument('--device', type=str, help='Either cpu or cuda', default='cpu')
     parser.add_argument('--model-name', type=str, help='Name of the model to use',
-                        choices=[bart_detox_name])
+                        choices=[bart_detox_name, t5_formality_name, t5_detox_name])
 
     args = parser.parse_args()
 
@@ -193,9 +257,17 @@ def main():
     os.makedirs(output_dir, exist_ok=True)
 
     if args.model_name == bart_detox_name:
-        model = BartDetox(args.device, args.data_path, test_size=0.2, output_dir=output_dir, max_input_length=128)
+        model = BartDetox(args.device, args.data_path, test_size=0.1, output_dir=output_dir, max_input_length=128)
         model.train_bart_detox()
         model.evaluate_bart_detox()
+    elif args.model_name == t5_formality_name:
+        model = T5Formality(args.device, args.data_path, test_size=0.1, output_dir=output_dir, max_input_length=128)
+        model.train_t5()
+        model.evaluate_t5()
+    elif args.model_name == t5_detox_name:
+        model = T5Detox(args.device, args.data_path, test_size=0.1, output_dir=output_dir, max_input_length=128)
+        model.train_t5()
+        model.evaluate_t5()
 
 
 if __name__ == '__main__':
