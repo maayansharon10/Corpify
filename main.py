@@ -3,58 +3,12 @@ from datetime import datetime
 
 import numpy as np
 import pandas as pd
-from transformers import BartForConditionalGeneration, AutoTokenizer, TrainingArguments, Trainer, EvalPrediction, \
-    AutoModelForSeq2SeqLM
+from transformers import BartForConditionalGeneration, AutoTokenizer, TrainingArguments, Trainer, EvalPrediction
 from datasets import Dataset
 from sklearn.model_selection import train_test_split
 from evaluate import load
 import argparse
-from dataclasses import dataclass
-
-
-@dataclass
-class BartDetox:
-    model_name: str = 'SkolkovoInstitute/bart-base-detox'
-    tokenizer: AutoTokenizer.from_pretrained = AutoTokenizer.from_pretrained(model_name)
-    model: BartForConditionalGeneration.from_pretrained = BartForConditionalGeneration.from_pretrained(model_name)
-
-
-@dataclass
-class T5Formality:
-    model_name: str = 'Isotonic/informal_to_formal'
-    tokenizer: AutoTokenizer.from_pretrained = AutoTokenizer.from_pretrained(model_name)
-    model: AutoModelForSeq2SeqLM.from_pretrained = AutoModelForSeq2SeqLM.from_pretrained(model_name)
-
-
-@dataclass
-class T5Detox:
-    model_name: str = 's-nlp/t5-paranmt-detox'
-    tokenizer: AutoTokenizer.from_pretrained = AutoTokenizer.from_pretrained(model_name)
-    model: AutoModelForSeq2SeqLM.from_pretrained = AutoModelForSeq2SeqLM.from_pretrained(model_name)
-
-
-def get_compute_metrics(tokenizer: AutoTokenizer.from_pretrained):
-    bert_score_metric = load('bertscore')
-    rouge_metric = load('rouge')  # Wraps up several variations of ROUGE, including ROUGE-L.
-    blue_metric = load('sacrebleu')  # SacreBLEU is a standard BLEU implementation that outputs the BLEU score.
-    meteor_metric = load('meteor')
-
-    def compute_metrics(p: EvalPrediction):
-        preds = p.predictions[0] if isinstance(p.predictions, tuple) else p.predictions
-        preds = preds.argmax(-1)
-        preds = tokenizer.batch_decode(preds, skip_special_tokens=True)
-        references = tokenizer.batch_decode(p.label_ids, skip_special_tokens=True)
-        bert_score = bert_score_metric.compute(predictions=preds, references=references, lang='en')
-        rouge = rouge_metric.compute(predictions=preds, references=references)
-        blue = blue_metric.compute(predictions=preds, references=references)
-        meteor = meteor_metric.compute(predictions=preds, references=references)
-
-        return {bert_score_metric.name: np.array(bert_score['f1']).mean(),
-                rouge_metric.name: rouge['rougeL'],
-                blue_metric.name: blue['score'],
-                meteor_metric.name: meteor['meteor']}
-
-    return compute_metrics
+from abc import ABC, abstractmethod
 
 
 def create_datasets(data_path: str, test_size: float) -> dict:
@@ -70,7 +24,8 @@ def create_datasets(data_path: str, test_size: float) -> dict:
     duplicates = data[~data['id'].isin(data_without_duplicates['id'])]
 
     train_data_without_duplicates, test_data_without_duplicates = train_test_split(data_without_duplicates,
-                                                                                   test_size=test_size, random_state=42)
+                                                                                   test_size=test_size,
+                                                                                   random_state=42)
 
     train_duplicates = duplicates[duplicates['source'].isin(train_data_without_duplicates['source'])]
     test_duplicates = duplicates[duplicates['source'].isin(test_data_without_duplicates['source'])]
@@ -93,74 +48,132 @@ def create_datasets(data_path: str, test_size: float) -> dict:
     return datasets
 
 
-def eval_model(trainer: Trainer, model_name: str, is_zero_shot=False):
-    trainer.model.eval()
-    predictions = trainer.predict(trainer.eval_dataset)
-    preds = predictions.predictions[0]
-    preds = preds.argmax(-1)
-    preds = trainer.tokenizer.batch_decode(preds, skip_special_tokens=True)
+class RephrasingModel(ABC):
+    def __init__(self, model_name: str, device: str, data_path: str, test_size: float, output_dir: str,
+                 max_input_length: int):
+        assert device in ['cpu', 'cuda']
+        assert os.path.exists(data_path)
+        assert 0 < test_size < 1
+        assert os.path.exists(output_dir)
+        assert max_input_length > 0
 
-    output_file_name = f'{model_name}.txt'
-    if is_zero_shot:
-        output_file_name = f'{model_name}_zero.txt'
+        self.model_name: str = model_name
+        self.tokenizer = AutoTokenizer.from_pretrained(self.model_name)
+        self.device: str = device
+        self.data_path: str = data_path
+        self.test_size: float = test_size
+        self.output_dir: str = output_dir
+        self.max_input_length: int = max_input_length
 
-    output_path = os.path.join(trainer.args.output_dir, output_file_name)
-    with open(output_path, 'w') as f:
-        f.write(f'PREDICTED & TARGET\n\n')
-        for i in range(len(preds)):
-            src = trainer.eval_dataset[i]['source']
-            target = trainer.eval_dataset[i]['target']
-            f.write(f'src: {src}\npred: {preds[i]}\ntarget: {target}\n')
-            f.write('-' * 100 + '\n')
-        f.write('\n\n\nMETRICS\n\n')
-        f.write(f'metrics: {predictions.metrics}')
+    @abstractmethod
+    def create_trainer(self):
+        pass
 
-    print(f'Output (metrics & predictions) saved to: {output_path}')
+    def get_compute_metrics(self):
+        bert_score_metric = load('bertscore')
+        rouge_metric = load('rouge')  # Wraps up several variations of ROUGE, including ROUGE-L.
+        blue_metric = load('sacrebleu')  # SacreBLEU is a standard BLEU implementation that outputs the BLEU score.
+        meteor_metric = load('meteor')
+
+        def compute_metrics(p: EvalPrediction):
+            preds = p.predictions[0] if isinstance(p.predictions, tuple) else p.predictions
+            preds = preds.argmax(-1)
+            preds = self.tokenizer.batch_decode(preds, skip_special_tokens=True)
+            references = self.tokenizer.batch_decode(p.label_ids, skip_special_tokens=True)
+            bert_score = bert_score_metric.compute(predictions=preds, references=references, lang='en')
+            rouge = rouge_metric.compute(predictions=preds, references=references)
+            blue = blue_metric.compute(predictions=preds, references=references)
+            meteor = meteor_metric.compute(predictions=preds, references=references)
+
+            return {bert_score_metric.name: np.array(bert_score['f1']).mean(),
+                    rouge_metric.name: rouge['rougeL'],
+                    blue_metric.name: blue['score'],
+                    meteor_metric.name: meteor['meteor']}
+
+        return compute_metrics
+
+    def train(self, trainer):
+        self.evaluate(trainer, is_zero_shot=True)
+        trainer.train()
+
+    def evaluate(self, trainer, is_zero_shot=False):
+        trainer.model.eval()
+        predictions = trainer.predict(trainer.eval_dataset)
+        preds = predictions.predictions[0]
+        preds = preds.argmax(-1)
+        preds = self.tokenizer.batch_decode(preds, skip_special_tokens=True)
+
+        model_name = self.model_name.split('/')[1]
+        output_file_name = f'{model_name}.txt'
+        if is_zero_shot:
+            output_file_name = f'{model_name}_zero.txt'
+
+        output_path = os.path.join(trainer.args.output_dir, output_file_name)
+        with open(output_path, 'w') as f:
+            f.write(f'PREDICTED & TARGET\n\n')
+            for i in range(len(preds)):
+                src = trainer.eval_dataset[i]['source']
+                target = trainer.eval_dataset[i]['target']
+                f.write(f'src: {src}\npred: {preds[i]}\ntarget: {target}\n')
+                f.write('-' * 100 + '\n')
+            f.write('\n\n\nMETRICS\n\n')
+            f.write(f'metrics: {predictions.metrics}')
+
+        print(f'Output (metrics & predictions) saved to: {output_path}')
 
 
-def train_model(model_obj, data_path: str, training_args: TrainingArguments, device: str = 'cpu',
-                test_size: float = 0.1):
-    assert device in ['cpu', 'cuda']
+class BartDetox(RephrasingModel):
+    def __init__(self, device: str, data_path: str, test_size: float, output_dir: str, max_input_length: int):
+        super().__init__('SkolkovoInstitute/bart-base-detox', device, data_path, test_size, output_dir,
+                         max_input_length)
 
-    tokenizer = model_obj.tokenizer
-    model = model_obj.model
+        self.trainer = self.create_trainer()
 
-    def preprocess_dataset(dataset: Dataset):
-        source_texts = dataset['source']
-        model_inputs = tokenizer(source_texts, truncation=True, padding='max_length', max_length=128)
+    def create_trainer(self):
+        model = BartForConditionalGeneration.from_pretrained(self.model_name).to(self.device)
 
-        target_texts = dataset['target']
-        with tokenizer.as_target_tokenizer():
-            targets = tokenizer(target_texts, truncation=True, padding='max_length', max_length=128)
+        def preprocess_dataset(dataset: Dataset):
+            source_texts = dataset['source']
+            model_inputs = self.tokenizer(source_texts, truncation=True, padding='max_length',
+                                          max_length=self.max_input_length)
 
-        model_inputs['labels'] = targets['input_ids']
-        return model_inputs
+            target_texts = dataset['target']
+            with self.tokenizer.as_target_tokenizer():
+                targets = self.tokenizer(target_texts, truncation=True, padding='max_length',
+                                         max_length=self.max_input_length)
 
-    data = create_datasets(data_path, test_size)
-    train_set = data['train'].map(preprocess_dataset, batched=True)
-    test_set = data['test'].map(preprocess_dataset, batched=True)
-    test_set = test_set.remove_columns('labels')
+            model_inputs['labels'] = targets['input_ids']
+            return model_inputs
 
-    # Train model
-    trainer = Trainer(
-        model=model,
-        args=training_args,
-        train_dataset=train_set,
-        eval_dataset=test_set,
-        compute_metrics=get_compute_metrics(tokenizer),
-        tokenizer=tokenizer,
-    )
+        data = create_datasets(self.data_path, self.test_size)
+        train_set = data['train'].map(preprocess_dataset, batched=True)
+        test_set = data['test'].map(preprocess_dataset, batched=True)
+        test_set = test_set.remove_columns('labels')
 
-    eval_model(trainer, model_obj.model_name.split('/')[1],
-               is_zero_shot=True)  # Evaluate model in zero-shot settings
+        training_args = TrainingArguments(
+            output_dir=self.output_dir,
+        )
 
-    trainer.train()
-    return trainer
+        # Train model
+        trainer = Trainer(
+            model=model,
+            args=training_args,
+            train_dataset=train_set,
+            eval_dataset=test_set,
+            compute_metrics=self.get_compute_metrics(),
+            tokenizer=self.tokenizer,
+        )
+
+        return trainer
+
+    def train_bart_detox(self):
+        super().train(self.trainer)
+
+    def evaluate_bart_detox(self, is_zero_shot=False):
+        super().evaluate(self.trainer, is_zero_shot)
 
 
 def main():
-    t5_form_name = 't5-formality'
-    t5_detox_name = 't5-detox'
     bart_detox_name = 'bart-detox'
 
     parser = argparse.ArgumentParser(description='BART Detox Training')
@@ -168,7 +181,7 @@ def main():
     parser.add_argument('--output-dir', type=str, help='Path to the output directory', default='results')
     parser.add_argument('--device', type=str, help='Either cpu or cuda', default='cpu')
     parser.add_argument('--model-name', type=str, help='Name of the model to use',
-                        choices=[bart_detox_name, t5_form_name, t5_detox_name])
+                        choices=[bart_detox_name])
 
     args = parser.parse_args()
 
@@ -180,20 +193,10 @@ def main():
     output_dir = os.path.join(args.output_dir, now)
     os.makedirs(output_dir, exist_ok=True)
 
-    training_args = TrainingArguments(
-        output_dir=output_dir,
-    )
-
-    model_obj = None
-    if args.model_name == t5_form_name:
-        model_obj = T5Formality()
-    elif args.model_name == bart_detox_name:
-        model_obj = BartDetox()
-    elif args.model_name == t5_detox_name:
-        model_obj = T5Detox()
-
-    trainer = train_model(model_obj, args.data_path, training_args, device=args.device)
-    eval_model(trainer, args.model_name)
+    if args.model_name == bart_detox_name:
+        model = BartDetox(args.device, args.data_path, test_size=0.2, output_dir=output_dir, max_input_length=128)
+        model.train_bart_detox()
+        model.evaluate_bart_detox()
 
 
 if __name__ == '__main__':
