@@ -1,4 +1,7 @@
+import json
 import os
+from typing import Dict
+
 import wandb
 from datetime import datetime
 
@@ -11,8 +14,6 @@ from sklearn.model_selection import train_test_split
 from evaluate import load
 import argparse
 from abc import ABC, abstractmethod
-
-from transformers.integrations import WandbCallback
 
 
 def create_datasets(data_path: str, test_size: float) -> dict:
@@ -74,18 +75,18 @@ def create_datasets(data_path: str, test_size: float) -> dict:
 
 
 class RephrasingModel(ABC):
-    def __init__(self, model_name: str, device: str, data_path: str, test_size: float, output_dir: str,
+    def __init__(self, model_name: str, device: str, data_path: str, train_config_args: Dict, output_dir: str,
                  max_input_length: int):
         assert device in ['cpu', 'cuda']
         assert os.path.exists(data_path)
-        assert 0 < test_size < 1
+        assert 0 < train_config_args["test_size"] < 1
         assert os.path.exists(output_dir)
         assert max_input_length > 0
 
         self.model_name: str = model_name
         self.device: str = device
         self.data_path: str = data_path
-        self.test_size: float = test_size
+        self.train_config_args: Dict = train_config_args
         self.output_dir: str = output_dir
         self.max_input_length: int = max_input_length
 
@@ -134,17 +135,18 @@ class RephrasingModel(ABC):
         return preprocess_dataset
 
     def train(self, trainer):
-        wandb.init(
-            project="anlp-project-corpify",
-            config={
-                "learning_rate": trainer.args.learning_rate,
-                "epochs": trainer.args.num_train_epochs,
-                "batch_size": trainer.args.per_device_train_batch_size,
-                "max_input_length": self.max_input_length,
-                "model_name": self.model_name,
-            },
-            name=f"{self.model_name}"
-        )
+        if self.train_config_args["use_wandb"]:
+            wandb.init(
+                project="anlp-project-corpify",
+                config={
+                    "learning_rate": trainer.args.learning_rate,
+                    "epochs": trainer.args.num_train_epochs,
+                    "weight_decay": trainer.args.weight_decay,
+                    "max_input_length": self.max_input_length,
+                    "model_name": self.model_name,
+                },
+                name=f"{self.model_name}"
+            )
 
         self.evaluate(trainer, is_zero_shot=True)
         trainer.train()
@@ -176,8 +178,8 @@ class RephrasingModel(ABC):
 
 
 class BartDetox(RephrasingModel):
-    def __init__(self, device: str, data_path: str, test_size: float, output_dir: str, max_input_length: int):
-        super().__init__('SkolkovoInstitute/bart-base-detox', device, data_path, test_size, output_dir,
+    def __init__(self, device: str, data_path: str, train_config_args: Dict, output_dir: str, max_input_length: int):
+        super().__init__('SkolkovoInstitute/bart-base-detox', device, data_path, train_config_args, output_dir,
                          max_input_length)
 
         self.trainer = self.create_trainer()
@@ -186,14 +188,16 @@ class BartDetox(RephrasingModel):
         model = BartForConditionalGeneration.from_pretrained(self.model_name).to(self.device)
         tokenizer = AutoTokenizer.from_pretrained(self.model_name)
 
-        data = create_datasets(self.data_path, self.test_size)
+        data = create_datasets(self.data_path, self.train_config_args["test_size"])
         train_set = data['train'].map(self.get_data_preprocessing_func(tokenizer), batched=True)
         test_set = data['test'].map(self.get_data_preprocessing_func(tokenizer), batched=True)
         test_set = test_set.remove_columns('labels')
 
         training_args = TrainingArguments(
             output_dir=self.output_dir,
-            report_to="wandb",
+            num_train_epochs=self.train_config_args["num_train_epochs"],
+            learning_rate=self.train_config_args["learning_rate"],
+            weight_decay=self.train_config_args["weight_decay"],
         )
 
         # Train model
@@ -215,9 +219,9 @@ class BartDetox(RephrasingModel):
 
 
 class T5Model(RephrasingModel):
-    def __init__(self, name: str, device: str, data_path: str, test_size: float, output_dir: str,
+    def __init__(self, name: str, device: str, data_path: str, train_config_args: Dict, output_dir: str,
                  max_input_length: int):
-        super().__init__(name, device, data_path, test_size, output_dir,
+        super().__init__(name, device, data_path, train_config_args, output_dir,
                          max_input_length)
 
         self.trainer = self.create_trainer()
@@ -231,7 +235,7 @@ class T5Model(RephrasingModel):
         tokenizer = AutoTokenizer.from_pretrained(self.model_name)
         model = AutoModelForSeq2SeqLM.from_pretrained(self.model_name).to(self.device)
 
-        data = create_datasets(self.data_path, self.test_size)
+        data = create_datasets(self.data_path, self.train_config_args["test_size"])
         train_set = data['train'].map(self.get_data_preprocessing_func(tokenizer), batched=True)
         test_set = data['test'].map(self.get_data_preprocessing_func(tokenizer), batched=True)
 
@@ -239,7 +243,9 @@ class T5Model(RephrasingModel):
             output_dir=self.output_dir,
             fp16=True,
             predict_with_generate=True,
-            report_to="wandb",
+            num_train_epochs=self.train_config_args["num_train_epochs"],
+            learning_rate=self.train_config_args["learning_rate"],
+            weight_decay=self.train_config_args["weight_decay"],
         )
 
         trainer = Seq2SeqTrainer(
@@ -260,31 +266,35 @@ class T5Model(RephrasingModel):
 
 
 class T5Formality(T5Model):
-    def __init__(self, device: str, data_path: str, test_size: float, output_dir: str, max_input_length: int):
-        super().__init__('Isotonic/informal_to_formal', device, data_path, test_size, output_dir,
+    def __init__(self, device: str, data_path: str, train_config_args: Dict, output_dir: str, max_input_length: int):
+        super().__init__('Isotonic/informal_to_formal', device, data_path, train_config_args, output_dir,
                          max_input_length)
 
 
 class T5Detox(T5Model):
-    def __init__(self, device: str, data_path: str, test_size: float, output_dir: str, max_input_length: int):
-        super().__init__('s-nlp/t5-paranmt-detox', device, data_path, test_size, output_dir, max_input_length)
+    def __init__(self, device: str, data_path: str, train_config_args: Dict, output_dir: str, max_input_length: int):
+        super().__init__('s-nlp/t5-paranmt-detox', device, data_path, train_config_args, output_dir, max_input_length)
 
         self.trainer = self.create_trainer()
 
 
 def main():
-    bart_detox_name = 'bart-detox'
-    t5_formality_name = 't5-formality'
-    t5_detox_name = 't5-detox'
-
     parser = argparse.ArgumentParser(description='BART Detox Training')
-    parser.add_argument('--data-path', type=str, help='Path to the input data file')
-    parser.add_argument('--output-dir', type=str, help='Path to the output directory', default='results')
-    parser.add_argument('--device', type=str, help='Either cpu or cuda', default='cpu')
-    parser.add_argument('--model-name', type=str, help='Name of the model to use',
-                        choices=[bart_detox_name, t5_formality_name, t5_detox_name])
+    parser.add_argument('--config-file', type=str, help='a config json file', default='config.json')
 
     args = parser.parse_args()
+    with open(args.config_file, 'r') as f:
+        config = json.load(f)
+        for key, value in config.items():
+            if isinstance(value, dict) and "value" in value and "choices" in value:
+                if value["value"] in value["choices"]:
+                    setattr(args, key, value["value"])
+                else:
+                    print(f"Error: Invalid value '{value['value']}' for '{key}'. "
+                          f"Valid choices are: {', '.join(value['choices'])}")
+                    return
+            else:
+                setattr(args, key, value)
 
     now = str(datetime.now()).replace(' ', '_').replace(':', '_').split('.')[0]
 
@@ -294,16 +304,16 @@ def main():
     output_dir = os.path.join(args.output_dir, now)
     os.makedirs(output_dir, exist_ok=True)
 
-    if args.model_name == bart_detox_name:
-        model = BartDetox(args.device, args.data_path, test_size=0.1, output_dir=output_dir, max_input_length=128)
+    if args.model == "bart-detox":
+        model = BartDetox(args.device, args.data_path, args.training, output_dir=output_dir, max_input_length=128)
         model.train_bart_detox()
         model.evaluate_bart_detox()
-    elif args.model_name == t5_formality_name:
-        model = T5Formality(args.device, args.data_path, test_size=0.1, output_dir=output_dir, max_input_length=128)
+    elif args.model == "t5-formal":
+        model = T5Formality(args.device, args.data_path, args.training, output_dir=output_dir, max_input_length=128)
         model.train_t5()
         model.evaluate_t5()
-    elif args.model_name == t5_detox_name:
-        model = T5Detox(args.device, args.data_path, test_size=0.1, output_dir=output_dir, max_input_length=128)
+    elif args.model == "t5-detox":
+        model = T5Detox(args.device, args.data_path, args.training, output_dir=output_dir, max_input_length=128)
         model.train_t5()
         model.evaluate_t5()
 

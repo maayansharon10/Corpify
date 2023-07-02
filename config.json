@@ -1,0 +1,26 @@
+{
+  "data_path": "./Data/all_sent_raw.csv",
+  "output_dir": "./results",
+  "device": {
+    "value": "cuda",
+    "choices": [
+      "cuda",
+      "cpu"
+    ]
+  },
+  "training": {
+    "num_train_epochs": 1,
+    "learning_rate": 1e-4,
+    "weight_decay": 0.0,
+    "test_size": 0.1,
+    "use_wandb": true
+  },
+  "model": {
+    "value": "bart-detox",
+    "choices": [
+      "t5-detox",
+      "t5-formal",
+      "bart-detox"
+    ]
+  }
+}
