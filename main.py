@@ -21,6 +21,27 @@ def create_datasets(data_path: str, test_size: float) -> dict:
     data.index.name = 'id'
     data.reset_index(inplace=True)
 
+    # Duplication control
+    max_dups = 5
+    sorted_data = data.sort_values(['source', 'id'])
+
+    occurrence_counter = {}
+
+    # Remove duplicates while keeping track of occurrences
+    unique_data = []
+    for _, row in sorted_data.iterrows():
+        source = row['source']
+        if source not in occurrence_counter:
+            occurrence_counter[source] = 1
+            unique_data.append(row)
+        else:
+            if occurrence_counter[source] <= max_dups:
+                occurrence_counter[source] += 1
+                unique_data.append(row)
+
+    data = pd.DataFrame(unique_data)
+
+    # Leakage control:
     data_without_duplicates = data.drop_duplicates(subset='source')
     duplicates = data[~data['id'].isin(data_without_duplicates['id'])]
 
