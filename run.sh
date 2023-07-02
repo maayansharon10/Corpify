@@ -22,4 +22,4 @@ set_env_vars () {
 activate
 set_env_vars
 
-python3 main.py --data-path 'Data/all_sent_raw.csv' --device 'cuda' --model-name 't5-detox'
+python3 main.py --data-path 'Data/all_sent_raw.csv' --device 'cuda' --model-name 'bart-detox'

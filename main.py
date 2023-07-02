@@ -1,4 +1,5 @@
 import os
+import wandb
 from datetime import datetime
 
 import numpy as np
@@ -10,6 +11,8 @@ from sklearn.model_selection import train_test_split
 from evaluate import load
 import argparse
 from abc import ABC, abstractmethod
+
+from transformers.integrations import WandbCallback
 
 
 def create_datasets(data_path: str, test_size: float) -> dict:
@@ -131,6 +134,18 @@ class RephrasingModel(ABC):
         return preprocess_dataset
 
     def train(self, trainer):
+        wandb.init(
+            project="anlp-project-corpify",
+            config={
+                "learning_rate": trainer.args.learning_rate,
+                "epochs": trainer.args.num_train_epochs,
+                "batch_size": trainer.args.per_device_train_batch_size,
+                "max_input_length": self.max_input_length,
+                "model_name": self.model_name,
+            },
+            name=f"{self.model_name}"
+        )
+
         self.evaluate(trainer, is_zero_shot=True)
         trainer.train()
 
@@ -178,6 +193,7 @@ class BartDetox(RephrasingModel):
 
         training_args = TrainingArguments(
             output_dir=self.output_dir,
+            report_to="wandb",
         )
 
         # Train model
@@ -223,6 +239,7 @@ class T5Model(RephrasingModel):
             output_dir=self.output_dir,
             fp16=True,
             predict_with_generate=True,
+            report_to="wandb",
         )
 
         trainer = Seq2SeqTrainer(
