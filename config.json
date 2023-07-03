@@ -9,20 +9,21 @@
     ]
   },
   "training": {
-    "num_train_epochs": 1,
-    "learning_rate": 1e-4,
-    "weight_decay": 0.0,
+    "num_train_epochs": 3,
+    "learning_rate": 1e-2,
+    "weight_decay": 1e-2,
     "test_size": 0.1,
     "use_wandb": true
   },
   "model": {
-    "value": "t5-large",
+    "value": "flan-base",
     "choices": [
       "t5-detox",
       "t5-formal",
       "t5-base",
       "t5-large",
       "bart-detox",
+      "bart-large",
       "flan-base",
       "flan-large"
     ]

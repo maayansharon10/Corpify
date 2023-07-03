@@ -148,7 +148,9 @@ class RephrasingModel(ABC):
                 name=f"{self.model_name}"
             )
 
-        self.evaluate(trainer, is_zero_shot=True)
+            trainer.args.report_to = "wandb"
+            trainer.args.logging_strategy = "steps"
+        # self.evaluate(trainer, is_zero_shot=True)
         trainer.train()
 
     def evaluate(self, trainer, is_zero_shot=False):
@@ -173,6 +175,9 @@ class RephrasingModel(ABC):
             f.write('\n\n\nMETRICS\n\n')
             f.write(f'metrics: {p.metrics}\n')
             f.write(f'costume metrics: {custome_metrics}\n')
+
+        if self.train_config_args["use_wandb"]:
+            wandb.save(output_path)
 
         print(f'Output (metrics & predictions) saved to: {output_path}')
 
@@ -300,39 +305,48 @@ def main():
     os.makedirs(output_dir, exist_ok=True)
 
     if args.model == "bart-detox":
-        model = BartBasedModel("s-nlp/bart-base-detox", args.device, args.data_path, args.training, output_dir=output_dir, max_input_length=128)
+        model = BartBasedModel("s-nlp/bart-base-detox", args.device, args.data_path, args.training,
+                               output_dir=output_dir, max_input_length=128)
         model.train_bart()
         model.evaluate_bart()
     elif args.model == "bart-base":
-        model = BartBasedModel("facebook/bart-base", args.device, args.data_path, args.training, output_dir=output_dir, max_input_length=128)
+        model = BartBasedModel("facebook/bart-base", args.device, args.data_path, args.training, output_dir=output_dir,
+                               max_input_length=128)
         model.train_bart()
         model.evaluate_bart()
     elif args.model == "bart-large":
-        model = BartBasedModel("facebook/bart-large", args.device, args.data_path, args.training, output_dir=output_dir, max_input_length=128)
+        model = BartBasedModel("facebook/bart-large", args.device, args.data_path, args.training, output_dir=output_dir,
+                               max_input_length=128)
         model.train_bart()
         model.evaluate_bart()
     elif args.model == "t5-formal":
-        model = T5Model("Isotonic/informal_to_formal", args.device, args.data_path, args.training, output_dir=output_dir, max_input_length=128)
+        model = T5Model("Isotonic/informal_to_formal", args.device, args.data_path, args.training,
+                        output_dir=output_dir, max_input_length=128)
         model.train_t5()
         model.evaluate_t5()
     elif args.model == "t5-detox":
-        model = T5Model("s-nlp/t5-paranmt-detox", args.device, args.data_path, args.training, output_dir=output_dir, max_input_length=128)
+        model = T5Model("s-nlp/t5-paranmt-detox", args.device, args.data_path, args.training, output_dir=output_dir,
+                        max_input_length=128)
         model.train_t5()
         model.evaluate_t5()
     elif args.model == "t5-base":
-        model = T5Model("t5-base", args.device, args.data_path, args.training, output_dir=output_dir, max_input_length=128)
+        model = T5Model("t5-base", args.device, args.data_path, args.training, output_dir=output_dir,
+                        max_input_length=128)
         model.train_t5()
         model.evaluate_t5()
     elif args.model == "t5-large":
-        model = T5Model("t5-large", args.device, args.data_path, args.training, output_dir=output_dir, max_input_length=128)
+        model = T5Model("t5-large", args.device, args.data_path, args.training, output_dir=output_dir,
+                        max_input_length=128)
         model.train_t5()
         model.evaluate_t5()
     elif args.model == "flan-base":
-        model = T5Model("google/flan-t5-base", args.device, args.data_path, args.training, output_dir=output_dir, max_input_length=128)
+        model = T5Model("google/flan-t5-base", args.device, args.data_path, args.training, output_dir=output_dir,
+                        max_input_length=128)
         model.train_t5()
         model.evaluate_t5()
     elif args.model == "flan-large":
-        model = T5Model("google/flan-t5-large", args.device, args.data_path, args.training, output_dir=output_dir, max_input_length=128)
+        model = T5Model("google/flan-t5-large", args.device, args.data_path, args.training, output_dir=output_dir,
+                        max_input_length=128)
         model.train_t5()
         model.evaluate_t5()
 
