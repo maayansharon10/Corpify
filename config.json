@@ -16,11 +16,15 @@
     "use_wandb": true
   },
   "model": {
-    "value": "bart-detox",
+    "value": "t5-large",
     "choices": [
       "t5-detox",
       "t5-formal",
-      "bart-detox"
+      "t5-base",
+      "t5-large",
+      "bart-detox",
+      "flan-base",
+      "flan-large"
     ]
   }
 }
