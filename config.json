@@ -1,5 +1,5 @@
 {
-  "data_path": "./Data/all_sent_raw.csv",
+  "data_path": "./Data/data_final.csv",
   "output_dir": "./results",
   "device": {
     "value": "cuda",
@@ -9,22 +9,19 @@
     ]
   },
   "training": {
-    "num_train_epochs": 3,
-    "learning_rate": 1e-2,
-    "weight_decay": 1e-2,
+    "num_train_epochs": 50,
+    "learning_rate": 1e-04,
     "test_size": 0.1,
     "use_wandb": true
   },
   "model": {
-    "value": "flan-base",
+    "value": "bart-large",
     "choices": [
       "t5-detox",
       "t5-formal",
-      "t5-base",
       "t5-large",
       "bart-detox",
       "bart-large",
-      "flan-base",
       "flan-large"
     ]
   }

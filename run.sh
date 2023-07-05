@@ -1,7 +1,7 @@
 #!/bin/bash -x
 #SBATCH --time=02:00:00
 #SBATCH --gres=gpu:a5000:1
-#SBATCH --mem-per-cpu=30g
+#SBATCH --mem-per-cpu=10g
 
 echo $PWD
 activate() {
@@ -17,6 +17,9 @@ set_env_vars() {
 
   HF_HOME=$PWD/.hf_home
   export HF_HOME
+
+  WANDB_PROJECT=anlp-project-corpify
+  export WANDB_PROJECT
 }
 
 activate

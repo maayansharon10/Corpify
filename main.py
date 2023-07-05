@@ -15,6 +15,8 @@ from evaluate import load
 import argparse
 from abc import ABC, abstractmethod
 
+from transformers.integrations import WandbCallback
+
 
 def create_datasets(data_path: str, test_size: float) -> dict:
     assert os.path.exists(data_path)
@@ -90,6 +92,17 @@ class RephrasingModel(ABC):
         self.output_dir: str = output_dir
         self.max_input_length: int = max_input_length
 
+        if self.train_config_args["use_wandb"]:
+            wandb.init(
+                project="anlp-project-corpify",
+                config={
+                    "epochs": self.train_config_args["num_train_epochs"],
+                    "max_input_length": self.max_input_length,
+                    "model_name": self.model_name,
+                },
+                name=f"{self.model_name}"
+            )
+
     @abstractmethod
     def create_trainer(self):
         pass
@@ -135,22 +148,16 @@ class RephrasingModel(ABC):
         return preprocess_dataset
 
     def train(self, trainer):
-        if self.train_config_args["use_wandb"]:
-            wandb.init(
-                project="anlp-project-corpify",
-                config={
-                    "learning_rate": trainer.args.learning_rate,
-                    "epochs": trainer.args.num_train_epochs,
-                    "weight_decay": trainer.args.weight_decay,
-                    "max_input_length": self.max_input_length,
-                    "model_name": self.model_name,
-                },
-                name=f"{self.model_name}"
-            )
+        if "weight_decay" in self.train_config_args:
+            trainer.args.weight_decay = self.train_config_args["weight_decay"]
+        if "learning_rate" in self.train_config_args:
+            trainer.args.learning_rate = self.train_config_args["learning_rate"]
 
+        if self.train_config_args["use_wandb"]:
             trainer.args.report_to = "wandb"
-            trainer.args.logging_strategy = "steps"
-        # self.evaluate(trainer, is_zero_shot=True)
+            trainer.args.logging_strategy = "epoch"
+            trainer.add_callback(WandbCallback())
+        self.evaluate(trainer, is_zero_shot=True)  # Evaluate zero-shot performance
         trainer.train()
 
     def evaluate(self, trainer, is_zero_shot=False):
@@ -202,8 +209,6 @@ class BartBasedModel(RephrasingModel):
         training_args = TrainingArguments(
             output_dir=self.output_dir,
             num_train_epochs=self.train_config_args["num_train_epochs"],
-            learning_rate=self.train_config_args["learning_rate"],
-            weight_decay=self.train_config_args["weight_decay"],
         )
 
         # Train model
@@ -247,11 +252,9 @@ class T5Model(RephrasingModel):
 
         args = Seq2SeqTrainingArguments(
             output_dir=self.output_dir,
-            fp16=True,
+            bf16=True,
             predict_with_generate=True,
             num_train_epochs=self.train_config_args["num_train_epochs"],
-            learning_rate=self.train_config_args["learning_rate"],
-            weight_decay=self.train_config_args["weight_decay"],
         )
 
         trainer = Seq2SeqTrainer(
@@ -269,13 +272,6 @@ class T5Model(RephrasingModel):
 
     def evaluate_t5(self, is_zero_shot=False):
         super().evaluate(self.trainer, is_zero_shot)
-
-
-class FlanT5Large(T5Model):
-    def __init__(self, device: str, data_path: str, train_config_args: Dict, output_dir: str, max_input_length: int):
-        super().__init__('google/flan-t5-large', device, data_path, train_config_args, output_dir, max_input_length)
-
-        self.trainer = self.create_trainer()
 
 
 def main():
@@ -329,18 +325,8 @@ def main():
                         max_input_length=128)
         model.train_t5()
         model.evaluate_t5()
-    elif args.model == "t5-base":
-        model = T5Model("t5-base", args.device, args.data_path, args.training, output_dir=output_dir,
-                        max_input_length=128)
-        model.train_t5()
-        model.evaluate_t5()
     elif args.model == "t5-large":
         model = T5Model("t5-large", args.device, args.data_path, args.training, output_dir=output_dir,
-                        max_input_length=128)
-        model.train_t5()
-        model.evaluate_t5()
-    elif args.model == "flan-base":
-        model = T5Model("google/flan-t5-base", args.device, args.data_path, args.training, output_dir=output_dir,
                         max_input_length=128)
         model.train_t5()
         model.evaluate_t5()
