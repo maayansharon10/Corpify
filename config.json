@@ -9,13 +9,13 @@
     ]
   },
   "training": {
-    "num_train_epochs": 3,
+    "num_train_epochs": 30,
     "learning_rate": 1e-04,
     "test_size": 0.1,
     "run_zero_shot": false
   },
   "model": {
-    "value": "t5-large",
+    "value": "flan-large",
     "choices": [
       "t5-detox",
       "t5-formal",
