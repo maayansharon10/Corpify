@@ -337,7 +337,7 @@ def main():
 
     if args.model.startswith("bart"):
         run_job_bart(args, output_dir)
-    elif args.model.startswith("t5"):
+    elif args.model.startswith("t5") or args.model.startswith("flan"):
         run_job_t5(args, output_dir)
 
 
