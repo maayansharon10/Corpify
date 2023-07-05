@@ -92,16 +92,15 @@ class RephrasingModel(ABC):
         self.output_dir: str = output_dir
         self.max_input_length: int = max_input_length
 
-        if self.train_config_args["use_wandb"]:
-            wandb.init(
-                project="anlp-project-corpify",
-                config={
-                    "epochs": self.train_config_args["num_train_epochs"],
-                    "max_input_length": self.max_input_length,
-                    "model_name": self.model_name,
-                },
-                name=f"{self.model_name}"
-            )
+        wandb.init(
+            project="anlp-project-corpify",
+            config={
+                "epochs": self.train_config_args["num_train_epochs"],
+                "max_input_length": self.max_input_length,
+                "model_name": self.model_name,
+            },
+            name=f"{self.model_name}"
+        )
 
     @abstractmethod
     def create_trainer(self):
@@ -153,11 +152,12 @@ class RephrasingModel(ABC):
         if "learning_rate" in self.train_config_args:
             trainer.args.learning_rate = self.train_config_args["learning_rate"]
 
-        if self.train_config_args["use_wandb"]:
-            trainer.args.report_to = "wandb"
-            trainer.args.logging_strategy = "epoch"
-            trainer.add_callback(WandbCallback())
-        self.evaluate(trainer, is_zero_shot=True)  # Evaluate zero-shot performance
+        trainer.args.report_to = "wandb"
+        trainer.args.logging_strategy = "epoch"
+        trainer.add_callback(WandbCallback())
+
+        if self.train_config_args["run_zero_shot"]:
+            self.evaluate(trainer, is_zero_shot=True)  # Evaluate zero-shot performance
         trainer.train()
 
     def evaluate(self, trainer, is_zero_shot=False):
@@ -183,8 +183,7 @@ class RephrasingModel(ABC):
             f.write(f'metrics: {p.metrics}\n')
             f.write(f'costume metrics: {custome_metrics}\n')
 
-        if self.train_config_args["use_wandb"]:
-            wandb.save(output_path)
+        wandb.save(output_path)
 
         print(f'Output (metrics & predictions) saved to: {output_path}')
 
