@@ -18,17 +18,8 @@ from abc import ABC, abstractmethod
 from transformers.integrations import WandbCallback
 
 
-def create_datasets(data_path: str, test_size: float) -> dict:
-    assert os.path.exists(data_path)
-
-    data = pd.read_csv(data_path)
-    data.columns.values[0] = 'source'
-    data.columns.values[1] = 'target'
-    data.index.name = 'id'
-    data.reset_index(inplace=True)
-
+def split_data(data: pd.DataFrame, max_dups: int, eval_size: float) -> (pd.DataFrame, pd.DataFrame):
     # Duplication control
-    max_dups = 5
     sorted_data = data.sort_values(['source', 'id'])
 
     occurrence_counter = {}
@@ -52,7 +43,7 @@ def create_datasets(data_path: str, test_size: float) -> dict:
     duplicates = data[~data['id'].isin(data_without_duplicates['id'])]
 
     train_data_without_duplicates, test_data_without_duplicates = train_test_split(data_without_duplicates,
-                                                                                   test_size=test_size,
+                                                                                   test_size=eval_size,
                                                                                    random_state=42)
 
     train_duplicates = duplicates[duplicates['source'].isin(train_data_without_duplicates['source'])]
@@ -61,15 +52,29 @@ def create_datasets(data_path: str, test_size: float) -> dict:
     train_data = pd.concat([train_data_without_duplicates, train_duplicates])
     test_data = pd.concat([test_data_without_duplicates, test_duplicates])
 
+    return train_data, test_data
+
+
+def create_datasets(data_path: str, max_dups, eval_size: float) -> dict:
+    assert os.path.exists(data_path)
+
+    data = pd.read_csv(data_path)
+    data.columns.values[0] = 'source'
+    data.columns.values[1] = 'target'
+    data.index.name = 'id'
+    data.reset_index(inplace=True)
+    train_data, test_data = split_data(data, max_dups, eval_size)
+    val_data, test_data = split_data(test_data, max_dups, eval_size=0.5)
+
     print(f'train_data_size: {len(train_data)}, test_data_size: {len(test_data)}')
 
-    splits = {'train': train_data, 'test': test_data}
-    datasets = {'train': None, 'test': None}
+    splits = {'train': train_data, 'validate': val_data, 'test': test_data}
+    datasets = {'train': None, 'validate': None, 'test': None}
 
-    for split_name, split_data in splits.items():
+    for split_name, split in splits.items():
         # Create dataset
-        dataset = Dataset.from_dict({'source': split_data['source'],
-                                     'target': split_data['target']})
+        dataset = Dataset.from_dict({'source': split['source'],
+                                     'target': split['target']})
         dataset.set_format(type='torch', columns=['source', 'target'])
         datasets[split_name] = dataset
 
@@ -81,7 +86,7 @@ class RephrasingModel(ABC):
                  max_input_length: int):
         assert device in ['cpu', 'cuda']
         assert os.path.exists(data_path)
-        assert 0 < train_config_args["test_size"] < 1
+        assert 0 < train_config_args["eval_size"] < 1
         assert os.path.exists(output_dir)
         assert max_input_length > 0
 
@@ -155,15 +160,12 @@ class RephrasingModel(ABC):
         trainer.args.report_to = "wandb"
         trainer.args.logging_strategy = "epoch"
         trainer.add_callback(WandbCallback())
-
-        if self.train_config_args["run_zero_shot"]:
-            self.evaluate(trainer, is_zero_shot=True)  # Evaluate zero-shot performance
         trainer.train()
 
-    def evaluate(self, trainer, is_zero_shot=False):
+    def evaluate(self, trainer, test_dataset, is_zero_shot=False):
         trainer.model.eval()
-        p = trainer.predict(trainer.eval_dataset)
-        custome_metrics = self.compute_metrics(p, trainer.eval_dataset, trainer.tokenizer)
+        p = trainer.predict(test_dataset)
+        custome_metrics = self.compute_metrics(p, test_dataset, trainer.tokenizer)
         preds = self.decode_preds(p, trainer.tokenizer)
 
         model_name = self.model_name.replace('/', '_')
@@ -173,10 +175,10 @@ class RephrasingModel(ABC):
 
         output_path = os.path.join(trainer.args.output_dir, output_file_name)
         with open(output_path, 'w') as f:
-            f.write(f'PREDICTED & TARGET\n\n')
+            f.write('PREDICTED & TARGET\n\n')
             for i in range(len(preds)):
-                src = trainer.eval_dataset[i]['source']
-                target = trainer.eval_dataset[i]['target']
+                src = test_dataset[i]['source']
+                target = test_dataset[i]['target']
                 f.write(f'src: {src}\npred: {preds[i]}\ntarget: {target}\n')
                 f.write('-' * 100 + '\n')
             f.write('\n\n\nMETRICS\n\n')
@@ -200,10 +202,13 @@ class BartBasedModel(RephrasingModel):
         model = BartForConditionalGeneration.from_pretrained(self.model_name).to(self.device)
         tokenizer = AutoTokenizer.from_pretrained(self.model_name)
 
-        data = create_datasets(self.data_path, self.train_config_args["test_size"])
+        data = create_datasets(self.data_path, self.train_config_args['max_dups'], self.train_config_args["eval_size"])
         train_set = data['train'].map(self.get_data_preprocessing_func(tokenizer), batched=True)
-        test_set = data['test'].map(self.get_data_preprocessing_func(tokenizer), batched=True)
-        test_set = test_set.remove_columns('labels')
+        eval_set = data['validation'].map(self.get_data_preprocessing_func(tokenizer), batched=True)
+        eval_set = eval_set.remove_columns('labels')
+
+        self.test_dataset = data['test'].map(self.get_data_preprocessing_func(tokenizer), batched=True)
+        self.test_dataset = self.test_dataset.remove_columns('labels')
 
         training_args = TrainingArguments(
             output_dir=self.output_dir,
@@ -219,9 +224,12 @@ class BartBasedModel(RephrasingModel):
             model=model,
             args=training_args,
             train_dataset=train_set,
-            eval_dataset=test_set,
+            eval_dataset=eval_set,
             tokenizer=tokenizer,
         )
+
+        if self.train_config_args["run_zero_shot"]:
+            self.evaluate_bart(is_zero_shot=True)
 
         return trainer
 
@@ -229,7 +237,7 @@ class BartBasedModel(RephrasingModel):
         super().train(self.trainer)
 
     def evaluate_bart(self, is_zero_shot=False):
-        super().evaluate(self.trainer, is_zero_shot)
+        super().evaluate(self.trainer, self.test_dataset, is_zero_shot)
 
 
 class T5Model(RephrasingModel):
@@ -249,9 +257,11 @@ class T5Model(RephrasingModel):
         tokenizer = AutoTokenizer.from_pretrained(self.model_name)
         model = AutoModelForSeq2SeqLM.from_pretrained(self.model_name).to(self.device)
 
-        data = create_datasets(self.data_path, self.train_config_args["test_size"])
+        data = create_datasets(self.data_path, self.train_config_args['max_dups'], self.train_config_args["eval_size"])
         train_set = data['train'].map(self.get_data_preprocessing_func(tokenizer), batched=True)
-        test_set = data['test'].map(self.get_data_preprocessing_func(tokenizer), batched=True)
+        eval_set = data['validate'].map(self.get_data_preprocessing_func(tokenizer), batched=True)
+
+        self.test_dataset = data['test'].map(self.get_data_preprocessing_func(tokenizer), batched=True)
 
         args = Seq2SeqTrainingArguments(
             output_dir=self.output_dir,
@@ -268,9 +278,12 @@ class T5Model(RephrasingModel):
             model=model,
             args=args,
             train_dataset=train_set,
-            eval_dataset=test_set,
+            eval_dataset=eval_set,
             tokenizer=tokenizer,
         )
+
+        if self.train_config_args["run_zero_shot"]:
+            self.evaluate_t5(is_zero_shot=True)
 
         return trainer
 
@@ -278,7 +291,7 @@ class T5Model(RephrasingModel):
         super().train(self.trainer)
 
     def evaluate_t5(self, is_zero_shot=False):
-        super().evaluate(self.trainer, is_zero_shot)
+        super().evaluate(self.trainer, self.test_dataset, is_zero_shot)
 
 
 def run_job_bart(args, output_dir):
