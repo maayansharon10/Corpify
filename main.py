@@ -97,13 +97,22 @@ class RephrasingModel(ABC):
         self.output_dir: str = output_dir
         self.max_input_length: int = max_input_length
 
+        wandb_config = {
+            "epochs": self.train_config_args["num_train_epochs"],
+            "max_input_length": self.max_input_length,
+            "model_name": self.model_name,
+            "max_dups": self.train_config_args["max_dups"],
+            "eval_size": self.train_config_args["eval_size"],
+        }
+
+        if "learning_rate" in self.train_config_args:
+            wandb_config["learning_rate"] = self.train_config_args["learning_rate"]
+        if "weight_decay" in self.train_config_args:
+            wandb_config["weight_decay"] = self.train_config_args["weight_decay"]
+
         wandb.init(
             project="anlp-project-corpify",
-            config={
-                "epochs": self.train_config_args["num_train_epochs"],
-                "max_input_length": self.max_input_length,
-                "model_name": self.model_name,
-            },
+            config=wandb_config,
             name=f"{self.model_name}"
         )
 
@@ -165,7 +174,7 @@ class RephrasingModel(ABC):
     def evaluate(self, trainer, test_dataset, is_zero_shot=False):
         trainer.model.eval()
         p = trainer.predict(test_dataset)
-        custome_metrics = self.compute_metrics(p, test_dataset, trainer.tokenizer)
+        custom_metrics = self.compute_metrics(p, test_dataset, trainer.tokenizer)
         preds = self.decode_preds(p, trainer.tokenizer)
 
         model_name = self.model_name.replace('/', '_')
@@ -183,7 +192,7 @@ class RephrasingModel(ABC):
                 f.write('-' * 100 + '\n')
             f.write('\n\n\nMETRICS\n\n')
             f.write(f'metrics: {p.metrics}\n')
-            f.write(f'costume metrics: {custome_metrics}\n')
+            f.write(f'custom metrics: {custom_metrics}\n')
 
         wandb.save(output_path)
 
@@ -204,7 +213,7 @@ class BartBasedModel(RephrasingModel):
 
         data = create_datasets(self.data_path, self.train_config_args['max_dups'], self.train_config_args["eval_size"])
         train_set = data['train'].map(self.get_data_preprocessing_func(tokenizer), batched=True)
-        eval_set = data['validation'].map(self.get_data_preprocessing_func(tokenizer), batched=True)
+        eval_set = data['validate'].map(self.get_data_preprocessing_func(tokenizer), batched=True)
         eval_set = eval_set.remove_columns('labels')
 
         self.test_dataset = data['test'].map(self.get_data_preprocessing_func(tokenizer), batched=True)
@@ -213,10 +222,6 @@ class BartBasedModel(RephrasingModel):
         training_args = TrainingArguments(
             output_dir=self.output_dir,
             num_train_epochs=self.train_config_args["num_train_epochs"],
-            load_best_model_at_end=True,
-            save_total_limit=1,
-            save_strategy='epoch',
-            evaluation_strategy='epoch',
         )
 
         # Train model
