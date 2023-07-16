@@ -216,14 +216,14 @@ class RephrasingModel(ABC):
         print(f'best run params: {best_run_params}')
 
         if 'learning_rate' in best_run_params:
-            trainer.model.config.learning_rate = best_run_params['learning_rate']
-            print(f'Updated learning rate to: {best_run_params["learning_rate"]}')
+            trainer.args.learning_rate = best_run_params['learning_rate']
+            print(f'Updated learning rate to: {trainer.args.learning_rate}')
         if 'weight_decay' in best_run_params:
-            trainer.model.config.weight_decay = best_run_params['weight_decay']
-            print(f'Updated weight decay to: {best_run_params["weight_decay"]}')
+            trainer.args.weight_decay = best_run_params['weight_decay']
+            print(f'Updated weight decay to: {trainer.args.weight_decay}')
         if 'num_train_epochs' in best_run_params:
             trainer.args.num_train_epochs = best_run_params['num_train_epochs']
-            print(f'Updated num train epochs to: {best_run_params["num_train_epochs"]}')
+            print(f'Updated num train epochs to: {trainer.args.num_train_epochs}')
 
         wandb.finish()
         self.init_wandb_run(f'{self.model_name}_hpo_best_run')
