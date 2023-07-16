@@ -55,10 +55,34 @@ def split_data(data: pd.DataFrame, max_dups: int, eval_size: float) -> (pd.DataF
     return train_data, test_data
 
 
+def filter_bad_ascii(df: pd.DataFrame) -> pd.DataFrame:
+    filtered_sentences = []
+    for index, row in df.iterrows():
+        source_sentence = row['regular']
+        target_sentence = row['corp']
+
+        # Check if any character in the source sentence is not within ASCII range
+        if any(ord(char) > 127 for char in source_sentence):
+            continue  # Skip this sentence
+
+        # Check if any character in the target sentence is not within ASCII range
+        if any(ord(char) > 127 for char in target_sentence):
+            continue  # Skip this sentence
+
+        # If both sentences passed the check, add them to the filtered list
+        filtered_sentences.append((source_sentence, target_sentence))
+
+    # Create a new dataframe from the filtered sentences
+    filtered_df = pd.DataFrame(filtered_sentences, columns=['regular', 'corp'])
+
+    return filtered_df
+
+
 def create_datasets(data_path: str, max_dups, eval_size: float) -> dict:
     assert os.path.exists(data_path)
 
     data = pd.read_csv(data_path)
+    data = filter_bad_ascii(data)
     data.columns.values[0] = 'source'
     data.columns.values[1] = 'target'
     data.index.name = 'id'
