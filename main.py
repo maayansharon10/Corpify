@@ -97,6 +97,7 @@ class RephrasingModel(ABC):
         self.output_dir: str = output_dir
         self.max_input_length: int = max_input_length
 
+    def init_wandb_run(self, name: str):
         wandb_config = {
             "epochs": self.train_config_args["num_train_epochs"],
             "max_input_length": self.max_input_length,
@@ -105,15 +106,10 @@ class RephrasingModel(ABC):
             "eval_size": self.train_config_args["eval_size"],
         }
 
-        if "learning_rate" in self.train_config_args:
-            wandb_config["learning_rate"] = self.train_config_args["learning_rate"]
-        if "weight_decay" in self.train_config_args:
-            wandb_config["weight_decay"] = self.train_config_args["weight_decay"]
-
         wandb.init(
             project="anlp-project-corpify",
             config=wandb_config,
-            name=f"{self.model_name}"
+            name=name
         )
 
     @abstractmethod
@@ -161,10 +157,7 @@ class RephrasingModel(ABC):
         return preprocess_dataset
 
     def train(self, trainer):
-        if "weight_decay" in self.train_config_args:
-            trainer.args.weight_decay = self.train_config_args["weight_decay"]
-        if "learning_rate" in self.train_config_args:
-            trainer.args.learning_rate = self.train_config_args["learning_rate"]
+        self.init_wandb_run(f'{self.model_name}_train')
 
         trainer.args.report_to = "wandb"
         trainer.args.logging_strategy = "epoch"
@@ -198,6 +191,41 @@ class RephrasingModel(ABC):
 
         print(f'Output (metrics & predictions) saved to: {output_path}')
 
+    def get_optuna_space(self):
+        def optuna_hp_space(trial):
+            hpo_params = self.train_config_args["hpo"]["parameters"]
+            dict_params = {}
+            for param, settings in hpo_params.items():
+                dict_params[param] = trial.suggest_float(param, settings["min"], settings["max"], log=True)
+            return dict_params
+
+        return optuna_hp_space
+
+    def hpo(self, trainer):
+        res = trainer.hyperparameter_search(
+            direction="minimize",
+            backend="optuna",
+            hp_space=self.get_optuna_space(),
+            n_trials=self.train_config_args["hpo"]["nr_trials"],
+        )
+
+        best_run_params = res.hyperparameters
+
+        if 'learning_rate' in best_run_params:
+            trainer.model.config.learning_rate = best_run_params['learning_rate']
+        if 'weight_decay' in best_run_params:
+            trainer.model.config.weight_decay = best_run_params['weight_decay']
+
+        wandb.finish()
+        self.init_wandb_run(f'{self.model_name}_hpo_best_run')
+        trainer.args.report_to = "wandb"
+        trainer.args.logging_strategy = "epoch"
+        trainer.add_callback(WandbCallback())
+
+        trainer.train()
+
+        return trainer
+
 
 class BartBasedModel(RephrasingModel):
     def __init__(self, name: str, device: str, data_path: str, train_config_args: Dict, output_dir: str,
@@ -208,7 +236,9 @@ class BartBasedModel(RephrasingModel):
         self.trainer = self.create_trainer()
 
     def create_trainer(self):
-        model = BartForConditionalGeneration.from_pretrained(self.model_name).to(self.device)
+        def model_init():
+            return BartForConditionalGeneration.from_pretrained(self.model_name).to(self.device)
+
         tokenizer = AutoTokenizer.from_pretrained(self.model_name)
 
         data = create_datasets(self.data_path, self.train_config_args['max_dups'], self.train_config_args["eval_size"])
@@ -226,7 +256,8 @@ class BartBasedModel(RephrasingModel):
 
         # Train model
         trainer = Trainer(
-            model=model,
+            model=None,
+            model_init=model_init,
             args=training_args,
             train_dataset=train_set,
             eval_dataset=eval_set,
@@ -237,6 +268,10 @@ class BartBasedModel(RephrasingModel):
             self.evaluate_bart(is_zero_shot=True)
 
         return trainer
+
+    def hpo_bart(self):
+        updated_trainer = super().hpo(self.trainer)
+        self.trainer = updated_trainer
 
     def train_bart(self):
         super().train(self.trainer)
@@ -260,7 +295,9 @@ class T5Model(RephrasingModel):
 
     def create_trainer(self):
         tokenizer = AutoTokenizer.from_pretrained(self.model_name)
-        model = AutoModelForSeq2SeqLM.from_pretrained(self.model_name).to(self.device)
+
+        def model_init(trial):
+            return AutoModelForSeq2SeqLM.from_pretrained(self.model_name).to(self.device)
 
         data = create_datasets(self.data_path, self.train_config_args['max_dups'], self.train_config_args["eval_size"])
         train_set = data['train'].map(self.get_data_preprocessing_func(tokenizer), batched=True)
@@ -280,7 +317,8 @@ class T5Model(RephrasingModel):
         )
 
         trainer = Seq2SeqTrainer(
-            model=model,
+            model=None,
+            model_init=model_init,
             args=args,
             train_dataset=train_set,
             eval_dataset=eval_set,
@@ -291,6 +329,10 @@ class T5Model(RephrasingModel):
             self.evaluate_t5(is_zero_shot=True)
 
         return trainer
+
+    def hpo_t5(self):
+        updated_trainer = super().hpo(self.trainer)
+        self.trainer = updated_trainer
 
     def train_t5(self):
         super().train(self.trainer)
@@ -308,7 +350,10 @@ def run_job_bart(args, output_dir):
     hf_model_name = model_to_hf_model_name[args.model]
     model = BartBasedModel(hf_model_name, args.device, args.data_path, args.training,
                            output_dir=output_dir, max_input_length=128)
-    model.train_bart()
+    if args.is_hpo_run:
+        model.hpo_bart()
+    else:
+        model.train_bart()
     model.evaluate_bart()
 
 
@@ -323,7 +368,10 @@ def run_job_t5(args, output_dir):
     hf_model_name = model_to_hf_model_name[args.model]
     model = T5Model(hf_model_name, args.device, args.data_path, args.training,
                     output_dir=output_dir, max_input_length=128)
-    model.train_t5()
+    if args.is_hpo_run:
+        model.hpo_t5()
+    else:
+        model.train_t5()
     model.evaluate_t5()
 
 
