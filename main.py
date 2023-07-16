@@ -196,7 +196,10 @@ class RephrasingModel(ABC):
             hpo_params = self.train_config_args["hpo"]["parameters"]
             dict_params = {}
             for param, settings in hpo_params.items():
-                dict_params[param] = trial.suggest_float(param, settings["min"], settings["max"], log=True)
+                if settings["type"] == "float":
+                    dict_params[param] = trial.suggest_float(param, settings["min"], settings["max"], log=True)
+                elif settings["type"] == "int":
+                    dict_params[param] = trial.suggest_int(param, settings["min"], settings["max"], log=True)
             return dict_params
 
         return optuna_hp_space
@@ -210,11 +213,17 @@ class RephrasingModel(ABC):
         )
 
         best_run_params = res.hyperparameters
+        print(f'best run params: {best_run_params}')
 
         if 'learning_rate' in best_run_params:
             trainer.model.config.learning_rate = best_run_params['learning_rate']
+            print(f'Updated learning rate to: {best_run_params["learning_rate"]}')
         if 'weight_decay' in best_run_params:
             trainer.model.config.weight_decay = best_run_params['weight_decay']
+            print(f'Updated weight decay to: {best_run_params["weight_decay"]}')
+        if 'num_train_epochs' in best_run_params:
+            trainer.args.num_train_epochs = best_run_params['num_train_epochs']
+            print(f'Updated num train epochs to: {best_run_params["num_train_epochs"]}')
 
         wandb.finish()
         self.init_wandb_run(f'{self.model_name}_hpo_best_run')

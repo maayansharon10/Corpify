@@ -10,20 +10,27 @@
     ]
   },
   "training": {
-    "num_train_epochs": 5,
+    "num_train_epochs": 3,
     "eval_size": 0.2,
     "run_zero_shot": false,
     "max_dups": 1,
     "hpo": {
-      "nr_trials": 4,
+      "nr_trials": 2,
       "parameters": {
         "learning_rate": {
+          "type": "float",
           "min": 1e-05,
           "max": 1e-03
         },
         "weight_decay": {
-          "min": 1e-08,
-          "max": 1e-01
+          "type": "float",
+          "min": 1e-05,
+          "max": 1e-03
+        },
+        "num_train_epochs": {
+          "type": "int",
+          "min": 2,
+          "max": 5
         }
       }
     }
