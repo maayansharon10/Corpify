@@ -15,7 +15,7 @@
     "run_zero_shot": false,
     "max_dups": 1,
     "hpo": {
-      "nr_trials": 2,
+      "nr_trials": 10,
       "parameters": {
         "learning_rate": {
           "type": "float",

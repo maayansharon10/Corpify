@@ -195,25 +195,33 @@ class RephrasingModel(ABC):
         preds = self.decode_preds(p, trainer.tokenizer)
 
         model_name = self.model_name.replace('/', '_')
-        output_file_name = f'{model_name}.txt'
+        output_file_name = f'test_results_{model_name}.txt'
         if is_zero_shot:
             output_file_name = f'{model_name}_zero.txt'
 
         output_path = os.path.join(trainer.args.output_dir, output_file_name)
+        output = []
         with open(output_path, 'w') as f:
             f.write('PREDICTED & TARGET\n\n')
             for i in range(len(preds)):
                 src = test_dataset[i]['source']
                 target = test_dataset[i]['target']
                 f.write(f'src: {src}\npred: {preds[i]}\ntarget: {target}\n')
+                output.append({'src': src, 'pred': preds[i], 'target': target})
                 f.write('-' * 100 + '\n')
             f.write('\n\n\nMETRICS\n\n')
             f.write(f'metrics: {p.metrics}\n')
             f.write(f'custom metrics: {custom_metrics}\n')
 
+        output_df = pd.DataFrame(output)
+        output_csv_path = os.path.join(trainer.args.output_dir, f'test_results_{model_name}.csv')
+        output_df.to_csv(output_csv_path, index=False)
+
         wandb.save(output_path)
+        wandb.save(output_csv_path)
 
         print(f'Output (metrics & predictions) saved to: {output_path}')
+        print(f'Predictions in csv form are saved to: {output_csv_path}')
 
     def get_optuna_space(self):
         def optuna_hp_space(trial):
