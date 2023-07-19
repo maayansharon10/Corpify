@@ -232,6 +232,8 @@ class RephrasingModel(ABC):
                     dict_params[param] = trial.suggest_float(param, settings["min"], settings["max"], log=True)
                 elif settings["type"] == "int":
                     dict_params[param] = trial.suggest_int(param, settings["min"], settings["max"], log=True)
+                elif settings["type"] == "categorical":
+                    dict_params[param] = trial.suggest_categorical(param, settings["values"])
             return dict_params
 
         return optuna_hp_space
@@ -254,8 +256,16 @@ class RephrasingModel(ABC):
             trainer.args.weight_decay = best_run_params['weight_decay']
             print(f'Updated weight decay to: {trainer.args.weight_decay}')
         if 'num_train_epochs' in best_run_params:
-            trainer.args.num_train_epochs = best_run_params['num_train_epochs']
+            ###
+            # Optuna selects a model based on the last epoch, so varying this parameter is mainly used to avoid
+            # choosing the model that is "less prone to overfitting".
+            # The trainer however, takes the best model based on the validation loss, so we can train for longer.
+            ###
+            trainer.args.num_train_epochs = best_run_params['num_train_epochs'] * 2
             print(f'Updated num train epochs to: {trainer.args.num_train_epochs}')
+        if 'per_device_train_batch_size' in best_run_params:
+            trainer.args.per_device_train_batch_size = best_run_params['per_device_train_batch_size']
+            print(f'Updated per device train batch size to: {trainer.args.per_device_train_batch_size}')
 
         wandb.finish()
         self.init_wandb_run(f'{self.model_name}_hpo_best_run')

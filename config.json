@@ -20,17 +20,25 @@
         "learning_rate": {
           "type": "float",
           "min": 1e-05,
-          "max": 1e-03
+          "max": 1e-02
         },
         "weight_decay": {
           "type": "float",
           "min": 1e-05,
-          "max": 1e-03
+          "max": 1e-02
         },
         "num_train_epochs": {
           "type": "int",
           "min": 2,
           "max": 5
+        },
+        "per_device_train_batch_size": {
+          "type": "categorical",
+          "values": [
+            4,
+            8,
+            16
+          ]
         }
       }
     }
