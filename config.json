@@ -1,5 +1,5 @@
 {
-  "is_hpo_run": false,
+  "is_hpo_run": true,
   "data_path": "./Data/data_final.csv",
   "output_dir": "./results",
   "device": {
@@ -15,7 +15,7 @@
     "run_zero_shot": false,
     "max_dups": 1,
     "hpo": {
-      "nr_trials": 20,
+      "nr_trials": 10,
       "parameters": {
         "learning_rate": {
           "type": "float",
@@ -44,7 +44,7 @@
     }
   },
   "model": {
-    "value": "t5-formal",
+    "value": "t5-large",
     "choices": [
       "t5-detox",
       "t5-formal",

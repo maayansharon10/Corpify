@@ -37,6 +37,11 @@ def split_data(data: pd.DataFrame, max_dups: int, eval_size: float) -> (pd.DataF
                 unique_data.append(row)
 
     data = pd.DataFrame(unique_data)
+    diff_rows = sorted_data.compare(data)
+
+    print(f'Number of duplicates: {len(data) - len(unique_data)}')
+    if len(data) - len(unique_data) > 0:
+        print(f'Duplicate rows:\n{diff_rows}')
 
     # Leakage control:
     data_without_duplicates = data.drop_duplicates(subset='source')
@@ -74,6 +79,13 @@ def filter_bad_ascii(df: pd.DataFrame) -> pd.DataFrame:
 
     # Create a new dataframe from the filtered sentences
     filtered_df = pd.DataFrame(filtered_sentences, columns=['regular', 'corp'])
+
+    diff = len(df) - len(filtered_df)
+    diff_rows = df.compare(filtered_df)
+
+    print(f'Filtered {diff} rows with bad ASCII characters')
+    if diff > 0:
+        print(f'Filtered rows:\n{diff_rows}')
 
     return filtered_df
 
