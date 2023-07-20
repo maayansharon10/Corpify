@@ -62,11 +62,11 @@ def filter_bad_ascii(df: pd.DataFrame) -> pd.DataFrame:
         target_sentence = row['corp']
 
         # Check if any character in the source sentence is not within ASCII range
-        if any(ord(char) > 127 for char in source_sentence):
+        if any(ord(char) > 127 for char in source_sentence) or any(ord(char) < 32 for char in source_sentence):
             continue  # Skip this sentence
 
         # Check if any character in the target sentence is not within ASCII range
-        if any(ord(char) > 127 for char in target_sentence):
+        if any(ord(char) > 127 for char in target_sentence) or any(ord(char) < 32 for char in target_sentence):
             continue  # Skip this sentence
 
         # If both sentences passed the check, add them to the filtered list
