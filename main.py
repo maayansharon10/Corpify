@@ -141,6 +141,7 @@ class RephrasingModel(ABC):
             "eval_size": self.train_config_args["eval_size"],
         }
 
+        os.environ["WANDB_PROJECT"] = self.train_config_args["wandb_project"]
         wandb.init(
             project=self.train_config_args["wandb_project"],
             config=wandb_config,

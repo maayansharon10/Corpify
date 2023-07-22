@@ -17,9 +17,6 @@ set_env_vars() {
 
   HF_HOME=$PWD/.hf_home
   export HF_HOME
-
-  WANDB_PROJECT=anlp-project-corpify
-  export WANDB_PROJECT
 }
 
 activate
