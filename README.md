@@ -77,10 +77,60 @@ For cluster environments, an alternative method is available:
 The run.sh script takes care of activating the virtual environment, adjusting the default cache path of Hugging-Face
 libraries, and running main.py with config.json as the configuration file.
 
-### Job Modes
+### Available Models
 
 TODO
 
+### Job Modes
+
+The job mode is defined in the configuration file under the `job_mode` key. The following modes are available:
+
+#### train-and-eval
+
+The model is trained and evaluated, using the default hyperparameters.
+
+#### hpo-and-eval
+
+In this job mode, hyperparameter optimization is performed using the Optuna library. The supported hyperparameters are:
+
+* weight_decay
+* num_train_epochs
+* per_device_train_batch_size
+* learning_rate
+
+The allowed values for each hyperparameter are defined in the configuration file under the `hpo` key. For example:
+
+```
+"learning_rate": {
+ "type": "float",
+ "min": 1e-05,
+ "max": 1e-02
+},
+```
+
+Optuna uses a random grid search by default, meaning that it performs multiple attempts to obtain the best
+hyperparameters (trials). It selects the hyperparameters for each trial randomly from the allowed values defined in the
+configuration file. The number of trials is defined in the configuration file under the `hpo_trials` key. For example:
+
+```
+"hpo_trials": 10,
+```
+
+The best trial is selected based on the evaluation loss, and a new training and evaluation session is performed using
+the best hyperparameters.
+
+#### eval-checkpoint
+
+This job mode is used to evaluate a model from a given checkpoint, without additional training. checkpoint. The path to
+the checkpoint is defined in the configuration file under the `initial_checkpoint` key. For example:
+
+```
+"initial_checkpoint": "./results/2023-07-22_13_04_16/t5-large_best_checkpoint",
+```
+
+#### eval-zero-shot
+
+The default model checkpoint is downloaded from Hugging-Face and evaluated on the test set.
 
 
 
