@@ -1,6 +1,6 @@
 #!/bin/bash -x
 #SBATCH --time=05:00:00
-#SBATCH --gres=gpu:a5000:1
+#SBATCH --gres=gpu:a6000:1
 #SBATCH --mem-per-cpu=10g
 
 echo $PWD
