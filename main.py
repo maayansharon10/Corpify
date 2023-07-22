@@ -192,6 +192,11 @@ class RephrasingModel(ABC):
 
         return preprocess_dataset
 
+    def save_best_checkpoint(self, trainer):
+        checkpoint_path = os.path.join(trainer.args.output_dir, f'{self.model_name}_best_checkpoint')
+        print(f'Saving best checkpoint to: {checkpoint_path}')
+        trainer.save_model(checkpoint_path)
+
     def train(self, trainer):
         self.init_wandb_run(f'{self.model_name}_train')
 
@@ -199,6 +204,7 @@ class RephrasingModel(ABC):
         trainer.args.logging_strategy = "epoch"
         trainer.add_callback(WandbCallback())
         trainer.train()
+        self.save_best_checkpoint(trainer)
 
     def evaluate(self, trainer, test_dataset, is_zero_shot=False):
         trainer.model.eval()
@@ -286,6 +292,7 @@ class RephrasingModel(ABC):
         trainer.add_callback(WandbCallback())
 
         trainer.train()
+        self.save_best_checkpoint(trainer)
 
         return trainer
 
