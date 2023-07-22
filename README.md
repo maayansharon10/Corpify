@@ -155,5 +155,14 @@ the checkpoint is defined in the configuration file under the `initial_checkpoin
 
 The default model checkpoint is downloaded from Hugging-Face and evaluated on the test set.
 
+### Other Controllable Parameters
 
+```
+ "max_dups": 1,
+ "eval_size": 0.2,
+```
+
+`max_dups` is the maximum number of examples with the same source sentence allowed in the data.
+`eval_size` is the portion of the data to be used for evaluation. Half of it is used for creating the dev-set and the
+rest is used for the test-set.
 
