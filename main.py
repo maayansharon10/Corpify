@@ -118,32 +118,33 @@ def create_datasets(data_path: str, max_dups, eval_size: float) -> dict:
 
 
 class RephrasingModel(ABC):
-    def __init__(self, model_name: str, device: str, data_path: str, train_config_args: Dict, output_dir: str,
-                 max_input_length: int):
+    def __init__(self, model_name: str, device: str, data_path: str, pipeline_config_args: Dict, output_dir: str,
+                 max_input_length: int, load_from_checkpoint: bool):
         assert device in ['cpu', 'cuda']
         assert os.path.exists(data_path)
-        assert 0 < train_config_args["eval_size"] < 1
+        assert 0 < pipeline_config_args["eval_size"] < 1
         assert os.path.exists(output_dir)
         assert max_input_length > 0
 
         self.model_name: str = model_name
         self.device: str = device
         self.data_path: str = data_path
-        self.train_config_args: Dict = train_config_args
+        self.pipeline_config_args: Dict = pipeline_config_args
         self.output_dir: str = output_dir
         self.max_input_length: int = max_input_length
+        self.load_from_checkpoint: bool = load_from_checkpoint
 
     def init_wandb_run(self, name: str):
         wandb_config = {
             "max_input_length": self.max_input_length,
             "model_name": self.model_name,
-            "max_dups": self.train_config_args["max_dups"],
-            "eval_size": self.train_config_args["eval_size"],
+            "max_dups": self.pipeline_config_args["max_dups"],
+            "eval_size": self.pipeline_config_args["eval_size"],
         }
 
-        os.environ["WANDB_PROJECT"] = self.train_config_args["wandb_project"]
+        os.environ["WANDB_PROJECT"] = self.pipeline_config_args["wandb_project"]
         wandb.init(
-            project=self.train_config_args["wandb_project"],
+            project=self.pipeline_config_args["wandb_project"],
             config=wandb_config,
             name=name
         )
@@ -206,7 +207,10 @@ class RephrasingModel(ABC):
         trainer.train()
         self.save_best_checkpoint(trainer)
 
-    def evaluate(self, trainer, test_dataset, is_zero_shot=False):
+    def evaluate(self, trainer, test_dataset, is_zero_shot=False, init_wandb_run=False):
+        if init_wandb_run:
+            self.init_wandb_run(f'{self.model_name}_test_only')
+
         trainer.model.eval()
         p = trainer.predict(test_dataset)
         custom_metrics = self.compute_metrics(p, test_dataset, trainer.tokenizer)
@@ -243,7 +247,7 @@ class RephrasingModel(ABC):
 
     def get_optuna_space(self):
         def optuna_hp_space(trial):
-            hpo_params = self.train_config_args["hpo"]["parameters"]
+            hpo_params = self.pipeline_config_args["hpo"]["parameters"]
             dict_params = {}
             for param, settings in hpo_params.items():
                 if settings["type"] == "float":
@@ -261,7 +265,7 @@ class RephrasingModel(ABC):
             direction="minimize",
             backend="optuna",
             hp_space=self.get_optuna_space(),
-            n_trials=self.train_config_args["hpo"]["nr_trials"],
+            n_trials=self.pipeline_config_args["hpo"]["nr_trials"],
         )
 
         best_run_params = res.hyperparameters
@@ -298,20 +302,27 @@ class RephrasingModel(ABC):
 
 
 class BartBasedModel(RephrasingModel):
-    def __init__(self, name: str, device: str, data_path: str, train_config_args: Dict, output_dir: str,
-                 max_input_length: int):
-        super().__init__(name, device, data_path, train_config_args, output_dir,
-                         max_input_length)
+    def __init__(self, name: str, device: str, data_path: str, pipeline_config_args: Dict, output_dir: str,
+                 max_input_length: int, load_from_checkpoint):
+        super().__init__(name, device, data_path, pipeline_config_args, output_dir,
+                         max_input_length, load_from_checkpoint)
 
         self.trainer = self.create_trainer()
 
     def create_trainer(self):
         def model_init():
+            if self.load_from_checkpoint:
+                return BartForConditionalGeneration.from_pretrained(self.pipeline_config_args['initial_checkpoint']).to(
+                    self.device)
             return BartForConditionalGeneration.from_pretrained(self.model_name).to(self.device)
 
-        tokenizer = AutoTokenizer.from_pretrained(self.model_name)
+        if self.load_from_checkpoint:
+            tokenizer = AutoTokenizer.from_pretrained(self.pipeline_config_args['initial_checkpoint'])
+        else:
+            tokenizer = AutoTokenizer.from_pretrained(self.model_name)
 
-        data = create_datasets(self.data_path, self.train_config_args['max_dups'], self.train_config_args["eval_size"])
+        data = create_datasets(self.data_path, self.pipeline_config_args['max_dups'],
+                               self.pipeline_config_args["eval_size"])
         train_set = data['train'].map(self.get_data_preprocessing_func(tokenizer), batched=True)
         eval_set = data['validate'].map(self.get_data_preprocessing_func(tokenizer), batched=True)
         eval_set = eval_set.remove_columns('labels')
@@ -333,7 +344,7 @@ class BartBasedModel(RephrasingModel):
             tokenizer=tokenizer,
         )
 
-        if self.train_config_args["run_zero_shot"]:
+        if self.pipeline_config_args["run_zero_shot"]:
             self.evaluate_bart(is_zero_shot=True)
 
         return trainer
@@ -345,15 +356,15 @@ class BartBasedModel(RephrasingModel):
     def train_bart(self):
         super().train(self.trainer)
 
-    def evaluate_bart(self, is_zero_shot=False):
-        super().evaluate(self.trainer, self.test_dataset, is_zero_shot)
+    def evaluate_bart(self, is_zero_shot=False, init_wandb=False):
+        super().evaluate(self.trainer, self.test_dataset, is_zero_shot, init_wandb)
 
 
 class T5Model(RephrasingModel):
-    def __init__(self, name: str, device: str, data_path: str, train_config_args: Dict, output_dir: str,
-                 max_input_length: int):
-        super().__init__(name, device, data_path, train_config_args, output_dir,
-                         max_input_length)
+    def __init__(self, name: str, device: str, data_path: str, pipeline_config_args: Dict, output_dir: str,
+                 max_input_length: int, load_from_checkpoint):
+        super().__init__(name, device, data_path, pipeline_config_args, output_dir,
+                         max_input_length, load_from_checkpoint)
 
         self.trainer = self.create_trainer()
 
@@ -363,12 +374,19 @@ class T5Model(RephrasingModel):
         return preds
 
     def create_trainer(self):
-        tokenizer = AutoTokenizer.from_pretrained(self.model_name)
+        if self.load_from_checkpoint:
+            tokenizer = AutoTokenizer.from_pretrained(self.pipeline_config_args['initial_checkpoint'])
+        else:
+            tokenizer = AutoTokenizer.from_pretrained(self.model_name)
 
         def model_init(trial):
+            if self.load_from_checkpoint:
+                return AutoModelForSeq2SeqLM.from_pretrained(self.pipeline_config_args['initial_checkpoint']).to(
+                    self.device)
             return AutoModelForSeq2SeqLM.from_pretrained(self.model_name).to(self.device)
 
-        data = create_datasets(self.data_path, self.train_config_args['max_dups'], self.train_config_args["eval_size"])
+        data = create_datasets(self.data_path, self.pipeline_config_args['max_dups'],
+                               self.pipeline_config_args["eval_size"])
         train_set = data['train'].map(self.get_data_preprocessing_func(tokenizer), batched=True)
         eval_set = data['validate'].map(self.get_data_preprocessing_func(tokenizer), batched=True)
 
@@ -393,7 +411,7 @@ class T5Model(RephrasingModel):
             tokenizer=tokenizer,
         )
 
-        if self.train_config_args["run_zero_shot"]:
+        if self.pipeline_config_args["run_zero_shot"]:
             self.evaluate_t5(is_zero_shot=True)
 
         return trainer
@@ -405,8 +423,8 @@ class T5Model(RephrasingModel):
     def train_t5(self):
         super().train(self.trainer)
 
-    def evaluate_t5(self, is_zero_shot=False):
-        super().evaluate(self.trainer, self.test_dataset, is_zero_shot)
+    def evaluate_t5(self, is_zero_shot=False, init_wandb=False):
+        super().evaluate(self.trainer, self.test_dataset, is_zero_shot, init_wandb)
 
 
 def run_job_bart(args, output_dir):
@@ -416,13 +434,16 @@ def run_job_bart(args, output_dir):
     }
 
     hf_model_name = model_to_hf_model_name[args.model]
-    model = BartBasedModel(hf_model_name, args.device, args.data_path, args.training,
-                           output_dir=output_dir, max_input_length=128)
-    if args.is_hpo_run:
+    load_from_checkpoint = args.job_mode == "eval-checkpoint"
+    model = BartBasedModel(hf_model_name, args.device, args.data_path, args.rephrasing_pipeline_args,
+                           output_dir=output_dir, max_input_length=128, load_from_checkpoint=load_from_checkpoint)
+    if args.job_mode == "hpo-and-eval":
         model.hpo_bart()
-    else:
+    if args.job_mode == "train-and-eval":
         model.train_bart()
-    model.evaluate_bart()
+
+    init_wandb_on_eval = args.job_mode == "eval-checkpoint"
+    model.evaluate_bart(init_wandb=init_wandb_on_eval)
 
 
 def run_job_t5(args, output_dir):
@@ -434,13 +455,17 @@ def run_job_t5(args, output_dir):
     }
 
     hf_model_name = model_to_hf_model_name[args.model]
-    model = T5Model(hf_model_name, args.device, args.data_path, args.training,
-                    output_dir=output_dir, max_input_length=128)
-    if args.is_hpo_run:
+    load_from_checkpoint = args.job_mode == "eval-checkpoint"
+    model = T5Model(hf_model_name, args.device, args.data_path, args.rephrasing_pipeline_args,
+                    output_dir=output_dir, max_input_length=128, load_from_checkpoint=load_from_checkpoint)
+
+    if args.job_mode == "hpo-and-eval":
         model.hpo_t5()
-    else:
+    if args.job_mode == "train-and-eval":
         model.train_t5()
-    model.evaluate_t5()
+
+    init_wandb_on_eval = args.job_mode == "eval-checkpoint"
+    model.evaluate_t5(init_wandb=init_wandb_on_eval)
 
 
 def main():

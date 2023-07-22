@@ -1,5 +1,12 @@
 {
-  "is_hpo_run": true,
+  "job_mode": {
+    "value": "hpo-and-eval",
+    "choices": [
+      "train-and-eval",
+      "eval-checkpoint",
+      "hpo-and-eval"
+    ]
+  },
   "data_path": "./Data/data_final.csv",
   "output_dir": "./results",
   "device": {
@@ -9,13 +16,14 @@
       "cpu"
     ]
   },
-  "training": {
+  "rephrasing_pipeline_args": {
+    "max_dups": 1,
     "eval_size": 0.2,
     "run_zero_shot": false,
-    "max_dups": 1,
     "wandb_project": "anlp-project-corpify",
+    "initial_checkpoint": "./results/2023-07-22_13_04_16/t5-large_best_checkpoint",
     "hpo": {
-      "nr_trials": 10,
+      "nr_trials": 2,
       "parameters": {
         "learning_rate": {
           "type": "float",
