@@ -142,7 +142,7 @@ class RephrasingModel(ABC):
         }
 
         wandb.init(
-            project="anlp-project-corpify",
+            project=self.train_config_args["wandb_project"],
             config=wandb_config,
             name=name
         )
