@@ -135,7 +135,6 @@ class RephrasingModel(ABC):
 
     def init_wandb_run(self, name: str):
         wandb_config = {
-            "epochs": self.train_config_args["num_train_epochs"],
             "max_input_length": self.max_input_length,
             "model_name": self.model_name,
             "max_dups": self.train_config_args["max_dups"],
@@ -314,7 +313,6 @@ class BartBasedModel(RephrasingModel):
 
         training_args = TrainingArguments(
             output_dir=self.output_dir,
-            num_train_epochs=self.train_config_args["num_train_epochs"],
         )
 
         # Train model
@@ -372,7 +370,6 @@ class T5Model(RephrasingModel):
             output_dir=self.output_dir,
             bf16=True,
             predict_with_generate=True,
-            num_train_epochs=self.train_config_args["num_train_epochs"],
             load_best_model_at_end=True,
             save_total_limit=1,
             save_strategy='epoch',
