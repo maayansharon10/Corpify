@@ -207,7 +207,7 @@ class RephrasingModel(ABC):
         trainer.train()
         self.save_best_checkpoint(trainer)
 
-    def evaluate(self, trainer, test_dataset, is_zero_shot=False, init_wandb_run=False):
+    def evaluate(self, trainer, test_dataset, init_wandb_run=False):
         if init_wandb_run:
             self.init_wandb_run(f'{self.model_name}_test_only')
 
@@ -218,8 +218,6 @@ class RephrasingModel(ABC):
 
         model_name = self.model_name.replace('/', '_')
         output_file_name = f'test_results_{model_name}.txt'
-        if is_zero_shot:
-            output_file_name = f'{model_name}_zero.txt'
 
         output_path = os.path.join(trainer.args.output_dir, output_file_name)
         output = []
@@ -344,9 +342,6 @@ class BartBasedModel(RephrasingModel):
             tokenizer=tokenizer,
         )
 
-        if self.pipeline_config_args["run_zero_shot"]:
-            self.evaluate_bart(is_zero_shot=True)
-
         return trainer
 
     def hpo_bart(self):
@@ -356,8 +351,8 @@ class BartBasedModel(RephrasingModel):
     def train_bart(self):
         super().train(self.trainer)
 
-    def evaluate_bart(self, is_zero_shot=False, init_wandb=False):
-        super().evaluate(self.trainer, self.test_dataset, is_zero_shot, init_wandb)
+    def evaluate_bart(self, init_wandb=False):
+        super().evaluate(self.trainer, self.test_dataset, init_wandb)
 
 
 class T5Model(RephrasingModel):
@@ -411,9 +406,6 @@ class T5Model(RephrasingModel):
             tokenizer=tokenizer,
         )
 
-        if self.pipeline_config_args["run_zero_shot"]:
-            self.evaluate_t5(is_zero_shot=True)
-
         return trainer
 
     def hpo_t5(self):
@@ -423,8 +415,8 @@ class T5Model(RephrasingModel):
     def train_t5(self):
         super().train(self.trainer)
 
-    def evaluate_t5(self, is_zero_shot=False, init_wandb=False):
-        super().evaluate(self.trainer, self.test_dataset, is_zero_shot, init_wandb)
+    def evaluate_t5(self, init_wandb=False):
+        super().evaluate(self.trainer, self.test_dataset, init_wandb)
 
 
 def run_job_bart(args, output_dir):
@@ -442,7 +434,7 @@ def run_job_bart(args, output_dir):
     if args.job_mode == "train-and-eval":
         model.train_bart()
 
-    init_wandb_on_eval = args.job_mode == "eval-checkpoint"
+    init_wandb_on_eval = args.job_mode in ["eval-checkpoint", "eval-zero-shot"]
     model.evaluate_bart(init_wandb=init_wandb_on_eval)
 
 
@@ -464,7 +456,7 @@ def run_job_t5(args, output_dir):
     if args.job_mode == "train-and-eval":
         model.train_t5()
 
-    init_wandb_on_eval = args.job_mode == "eval-checkpoint"
+    init_wandb_on_eval = args.job_mode in ["eval-checkpoint", "eval-zero-shot"]
     model.evaluate_t5(init_wandb=init_wandb_on_eval)
 
 
@@ -491,7 +483,7 @@ def main():
     if not os.path.exists(args.output_dir):
         os.makedirs(args.output_dir)
 
-    output_dir = os.path.join(args.output_dir, now)
+    output_dir = os.path.join(args.output_dir, f'{args.model}_{args.job_mode}_{now}')
     os.makedirs(output_dir, exist_ok=True)
 
     if args.model.startswith("bart"):
