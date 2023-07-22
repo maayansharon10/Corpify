@@ -24,5 +24,7 @@ set_env_vars() {
 
 activate
 set_env_vars
+# wandb disabled
+
 
 python3 main.py --config-file config.json
