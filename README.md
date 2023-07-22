@@ -79,7 +79,30 @@ libraries, and running main.py with config.json as the configuration file.
 
 ### Available Models
 
-TODO
+We currently support the following models as a base for fine-tuning:
+
+1. **t5-large** (https://huggingface.co/t5-large): the default t5-large model.
+2. **t5-detox** (https://huggingface.co/s-nlp/t5-paranmt-detox): T5 fine-tuned on ParaNMT (a dataset of English-English
+   paraphrasing, filtered for the task of detoxification).
+3. **t5-formal** (https://huggingface.co/Isotonic/informal_to_formal): t5-base fine-tuned on the GYAFC (informal-formal)
+   dataset
+4. **flan-large** (https://huggingface.co/google/flan-t5-large): the default flan-large model.
+
+The model is defined in the configuration file under the `model` key. For example:
+
+```
+"model": {
+ "value": "t5-large",
+ "choices": [
+   "t5-detox",
+   "t5-formal",
+   "t5-large",
+   "bart-detox",
+   "bart-large",
+   "flan-large"
+ ]
+}
+```
 
 ### Job Modes
 
