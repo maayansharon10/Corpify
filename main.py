@@ -332,6 +332,7 @@ class BartBasedModel(RephrasingModel):
         self.test_dataset = self.test_dataset.remove_columns('labels')
 
         training_args = TrainingArguments(
+            num_train_epochs=3,
             output_dir=self.output_dir,
         )
 
@@ -423,6 +424,10 @@ class T5Model(RephrasingModel):
 
 
 def run_job_bart(args, output_dir):
+    if args.job_mode == "hpo-and-eval":
+        print("HPO is not supported on BART")
+        return
+
     model_to_hf_model_name = {
         "bart-detox": "s-nlp/bart-base-detox",
         "bart-large": "facebook/bart-large",
@@ -432,8 +437,7 @@ def run_job_bart(args, output_dir):
     load_from_checkpoint = args.job_mode == "eval-checkpoint"
     model = BartBasedModel(hf_model_name, args.device, args.data_path, args.rephrasing_pipeline_args,
                            output_dir=output_dir, max_input_length=128, load_from_checkpoint=load_from_checkpoint)
-    if args.job_mode == "hpo-and-eval":
-        model.hpo_bart()
+
     if args.job_mode == "train-and-eval":
         model.train_bart()
 

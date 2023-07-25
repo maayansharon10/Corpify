@@ -1,6 +1,6 @@
 {
   "job_mode": {
-    "value": "eval-zero-shot",
+    "value": "train-and-eval",
     "choices": [
       "train-and-eval",
       "eval-checkpoint",
@@ -52,7 +52,7 @@
     }
   },
   "model": {
-    "value": "flan-large",
+    "value": "bart-large",
     "choices": [
       "t5-detox",
       "t5-formal",
