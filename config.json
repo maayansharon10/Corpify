@@ -1,6 +1,6 @@
 {
   "job_mode": {
-    "value": "eval-zero-shot",
+    "value": "hpo-and-eval",
     "choices": [
       "train-and-eval",
       "eval-checkpoint",

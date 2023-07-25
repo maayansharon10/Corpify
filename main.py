@@ -90,7 +90,7 @@ def filter_bad_ascii(df: pd.DataFrame) -> pd.DataFrame:
     return filtered_df
 
 
-def create_datasets(data_path: str, max_dups, eval_size: float) -> dict:
+def create_datasets(data_path: str, out_dir: str, max_dups: int, eval_size: float) -> dict:
     assert os.path.exists(data_path)
 
     data = pd.read_csv(data_path)
@@ -113,6 +113,9 @@ def create_datasets(data_path: str, max_dups, eval_size: float) -> dict:
                                      'target': split['target']})
         dataset.set_format(type='torch', columns=['source', 'target'])
         datasets[split_name] = dataset
+        split_csv_path = os.path.join(out_dir, f'{split_name}_data.csv')
+        print(f'Saving split {split_name} to: {split_csv_path}')
+        split.to_csv(split_csv_path, index=False)
 
     return datasets
 
@@ -243,61 +246,6 @@ class RephrasingModel(ABC):
         print(f'Output (metrics & predictions) saved to: {output_path}')
         print(f'Predictions in csv form are saved to: {output_csv_path}')
 
-    def get_optuna_space(self):
-        def optuna_hp_space(trial):
-            hpo_params = self.pipeline_config_args["hpo"]["parameters"]
-            dict_params = {}
-            for param, settings in hpo_params.items():
-                if settings["type"] == "float":
-                    dict_params[param] = trial.suggest_float(param, settings["min"], settings["max"], log=True)
-                elif settings["type"] == "int":
-                    dict_params[param] = trial.suggest_int(param, settings["min"], settings["max"], log=True)
-                elif settings["type"] == "categorical":
-                    dict_params[param] = trial.suggest_categorical(param, settings["values"])
-            return dict_params
-
-        return optuna_hp_space
-
-    def hpo(self, trainer):
-        res = trainer.hyperparameter_search(
-            direction="minimize",
-            backend="optuna",
-            hp_space=self.get_optuna_space(),
-            n_trials=self.pipeline_config_args["hpo"]["nr_trials"],
-        )
-
-        best_run_params = res.hyperparameters
-        print(f'best run params: {best_run_params}')
-
-        if 'learning_rate' in best_run_params:
-            trainer.args.learning_rate = best_run_params['learning_rate']
-            print(f'Updated learning rate to: {trainer.args.learning_rate}')
-        if 'weight_decay' in best_run_params:
-            trainer.args.weight_decay = best_run_params['weight_decay']
-            print(f'Updated weight decay to: {trainer.args.weight_decay}')
-        if 'num_train_epochs' in best_run_params:
-            ###
-            # Optuna selects a model based on the last epoch, so varying this parameter is mainly used to avoid
-            # choosing the model that is "less prone to overfitting".
-            # The trainer however, takes the best model based on the validation loss, so we can train for longer.
-            ###
-            trainer.args.num_train_epochs = best_run_params['num_train_epochs'] * 2
-            print(f'Updated num train epochs to: {trainer.args.num_train_epochs}')
-        if 'per_device_train_batch_size' in best_run_params:
-            trainer.args.per_device_train_batch_size = best_run_params['per_device_train_batch_size']
-            print(f'Updated per device train batch size to: {trainer.args.per_device_train_batch_size}')
-
-        wandb.finish()
-        self.init_wandb_run(f'{self.model_name}_hpo_best_run')
-        trainer.args.report_to = "wandb"
-        trainer.args.logging_strategy = "epoch"
-        trainer.add_callback(WandbCallback())
-
-        trainer.train()
-        self.save_best_checkpoint(trainer)
-
-        return trainer
-
 
 class BartBasedModel(RephrasingModel):
     def __init__(self, name: str, device: str, data_path: str, pipeline_config_args: Dict, output_dir: str,
@@ -319,7 +267,7 @@ class BartBasedModel(RephrasingModel):
         else:
             tokenizer = AutoTokenizer.from_pretrained(self.model_name)
 
-        data = create_datasets(self.data_path, self.pipeline_config_args['max_dups'],
+        data = create_datasets(self.data_path, self.output_dir, self.pipeline_config_args['max_dups'],
                                self.pipeline_config_args["eval_size"])
         train_set = data['train'].map(self.get_data_preprocessing_func(tokenizer), batched=True)
         eval_set = data['validate'].map(self.get_data_preprocessing_func(tokenizer), batched=True)
@@ -329,6 +277,7 @@ class BartBasedModel(RephrasingModel):
         self.test_dataset = self.test_dataset.remove_columns('labels')
 
         training_args = TrainingArguments(
+            num_train_epochs=3,
             output_dir=self.output_dir,
         )
 
@@ -343,10 +292,6 @@ class BartBasedModel(RephrasingModel):
         )
 
         return trainer
-
-    def hpo_bart(self):
-        updated_trainer = super().hpo(self.trainer)
-        self.trainer = updated_trainer
 
     def train_bart(self):
         super().train(self.trainer)
@@ -380,7 +325,7 @@ class T5Model(RephrasingModel):
                     self.device)
             return AutoModelForSeq2SeqLM.from_pretrained(self.model_name).to(self.device)
 
-        data = create_datasets(self.data_path, self.pipeline_config_args['max_dups'],
+        data = create_datasets(self.data_path, self.output_dir, self.pipeline_config_args['max_dups'],
                                self.pipeline_config_args["eval_size"])
         train_set = data['train'].map(self.get_data_preprocessing_func(tokenizer), batched=True)
         eval_set = data['validate'].map(self.get_data_preprocessing_func(tokenizer), batched=True)
@@ -408,9 +353,58 @@ class T5Model(RephrasingModel):
 
         return trainer
 
+    def get_optuna_space(self):
+        def optuna_hp_space(trial):
+            hpo_params = self.pipeline_config_args["hpo"]["parameters"]
+            dict_params = {}
+            for param, settings in hpo_params.items():
+                if settings["type"] == "float":
+                    dict_params[param] = trial.suggest_float(param, settings["min"], settings["max"], log=True)
+                elif settings["type"] == "int":
+                    dict_params[param] = trial.suggest_int(param, settings["min"], settings["max"], log=True)
+                elif settings["type"] == "categorical":
+                    dict_params[param] = trial.suggest_categorical(param, settings["values"])
+            return dict_params
+
+        return optuna_hp_space
+
     def hpo_t5(self):
-        updated_trainer = super().hpo(self.trainer)
-        self.trainer = updated_trainer
+        res = self.trainer.hyperparameter_search(
+            direction="minimize",
+            backend="optuna",
+            hp_space=self.get_optuna_space(),
+            n_trials=self.pipeline_config_args["hpo"]["nr_trials"],
+        )
+
+        best_run_params = res.hyperparameters
+        print(f'best run params: {best_run_params}')
+
+        if 'learning_rate' in best_run_params:
+            self.trainer.args.learning_rate = best_run_params['learning_rate']
+            print(f'Updated learning rate to: {self.trainer.args.learning_rate}')
+        if 'weight_decay' in best_run_params:
+            self.trainer.args.weight_decay = best_run_params['weight_decay']
+            print(f'Updated weight decay to: {self.trainer.args.weight_decay}')
+        if 'num_train_epochs' in best_run_params:
+            ###
+            # Optuna selects a model based on the last epoch, so varying this parameter is mainly used to avoid
+            # choosing the model that is "less prone to overfitting".
+            # The trainer however, takes the best model based on the validation loss, so we can train for longer.
+            ###
+            self.trainer.args.num_train_epochs = best_run_params['num_train_epochs'] * 2
+            print(f'Updated num train epochs to: {self.trainer.args.num_train_epochs}')
+        if 'per_device_train_batch_size' in best_run_params:
+            self.trainer.args.per_device_train_batch_size = best_run_params['per_device_train_batch_size']
+            print(f'Updated per device train batch size to: {self.trainer.args.per_device_train_batch_size}')
+
+        wandb.finish()
+        self.init_wandb_run(f'{self.model_name}_hpo_best_run')
+        self.trainer.args.report_to = "wandb"
+        self.trainer.args.logging_strategy = "epoch"
+        self.trainer.add_callback(WandbCallback())
+
+        self.trainer.train()
+        self.save_best_checkpoint(self.trainer)
 
     def train_t5(self):
         super().train(self.trainer)
@@ -420,6 +414,10 @@ class T5Model(RephrasingModel):
 
 
 def run_job_bart(args, output_dir):
+    if args.job_mode == "hpo-and-eval":
+        print("HPO is not supported on BART")
+        return
+
     model_to_hf_model_name = {
         "bart-detox": "s-nlp/bart-base-detox",
         "bart-large": "facebook/bart-large",
@@ -429,8 +427,7 @@ def run_job_bart(args, output_dir):
     load_from_checkpoint = args.job_mode == "eval-checkpoint"
     model = BartBasedModel(hf_model_name, args.device, args.data_path, args.rephrasing_pipeline_args,
                            output_dir=output_dir, max_input_length=128, load_from_checkpoint=load_from_checkpoint)
-    if args.job_mode == "hpo-and-eval":
-        model.hpo_bart()
+
     if args.job_mode == "train-and-eval":
         model.train_bart()
 

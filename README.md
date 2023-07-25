@@ -81,12 +81,15 @@ libraries, and running main.py with config.json as the configuration file.
 
 We currently support the following models as a base for fine-tuning:
 
-1. **t5-large** (https://huggingface.co/t5-large): the default t5-large model.
+1. **t5-large** (https://huggingface.co/t5-large): the default T5-large model.
 2. **t5-detox** (https://huggingface.co/s-nlp/t5-paranmt-detox): T5 fine-tuned on ParaNMT (a dataset of English-English
    paraphrasing, filtered for the task of detoxification).
-3. **t5-formal** (https://huggingface.co/Isotonic/informal_to_formal): t5-base fine-tuned on the GYAFC (informal-formal)
+3. **t5-formal** (https://huggingface.co/Isotonic/informal_to_formal): T5-base fine-tuned on the GYAFC (informal-formal)
    dataset
-4. **flan-large** (https://huggingface.co/google/flan-t5-large): the default flan-large model.
+4. **flan-large** (https://huggingface.co/google/flan-t5-large): the default FLAN-large model.
+5. **bart-large** (https://huggingface.co/facebook/bart-large): the default BART-large model.
+6. **bart-detox** (https://huggingface.co/s-nlp/bart-paranmt-detox): BART-base trained on the ParaDetox (
+   toxic→not-toxic) dataset.
 
 The model is defined in the configuration file under the `model` key. For example:
 
@@ -113,6 +116,7 @@ The job mode is defined in the configuration file under the `job_mode` key. The 
 The model is trained and evaluated, using the default hyperparameters.
 
 #### hpo-and-eval
+*Note: This mode is not supported for BART models.*
 
 In this job mode, hyperparameter optimization is performed using the Optuna library. The supported hyperparameters are:
 
