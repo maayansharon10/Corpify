@@ -246,61 +246,6 @@ class RephrasingModel(ABC):
         print(f'Output (metrics & predictions) saved to: {output_path}')
         print(f'Predictions in csv form are saved to: {output_csv_path}')
 
-    def get_optuna_space(self):
-        def optuna_hp_space(trial):
-            hpo_params = self.pipeline_config_args["hpo"]["parameters"]
-            dict_params = {}
-            for param, settings in hpo_params.items():
-                if settings["type"] == "float":
-                    dict_params[param] = trial.suggest_float(param, settings["min"], settings["max"], log=True)
-                elif settings["type"] == "int":
-                    dict_params[param] = trial.suggest_int(param, settings["min"], settings["max"], log=True)
-                elif settings["type"] == "categorical":
-                    dict_params[param] = trial.suggest_categorical(param, settings["values"])
-            return dict_params
-
-        return optuna_hp_space
-
-    def hpo(self, trainer):
-        res = trainer.hyperparameter_search(
-            direction="minimize",
-            backend="optuna",
-            hp_space=self.get_optuna_space(),
-            n_trials=self.pipeline_config_args["hpo"]["nr_trials"],
-        )
-
-        best_run_params = res.hyperparameters
-        print(f'best run params: {best_run_params}')
-
-        if 'learning_rate' in best_run_params:
-            trainer.args.learning_rate = best_run_params['learning_rate']
-            print(f'Updated learning rate to: {trainer.args.learning_rate}')
-        if 'weight_decay' in best_run_params:
-            trainer.args.weight_decay = best_run_params['weight_decay']
-            print(f'Updated weight decay to: {trainer.args.weight_decay}')
-        if 'num_train_epochs' in best_run_params:
-            ###
-            # Optuna selects a model based on the last epoch, so varying this parameter is mainly used to avoid
-            # choosing the model that is "less prone to overfitting".
-            # The trainer however, takes the best model based on the validation loss, so we can train for longer.
-            ###
-            trainer.args.num_train_epochs = best_run_params['num_train_epochs'] * 2
-            print(f'Updated num train epochs to: {trainer.args.num_train_epochs}')
-        if 'per_device_train_batch_size' in best_run_params:
-            trainer.args.per_device_train_batch_size = best_run_params['per_device_train_batch_size']
-            print(f'Updated per device train batch size to: {trainer.args.per_device_train_batch_size}')
-
-        wandb.finish()
-        self.init_wandb_run(f'{self.model_name}_hpo_best_run')
-        trainer.args.report_to = "wandb"
-        trainer.args.logging_strategy = "epoch"
-        trainer.add_callback(WandbCallback())
-
-        trainer.train()
-        self.save_best_checkpoint(trainer)
-
-        return trainer
-
 
 class BartBasedModel(RephrasingModel):
     def __init__(self, name: str, device: str, data_path: str, pipeline_config_args: Dict, output_dir: str,
@@ -408,9 +353,58 @@ class T5Model(RephrasingModel):
 
         return trainer
 
+    def get_optuna_space(self):
+        def optuna_hp_space(trial):
+            hpo_params = self.pipeline_config_args["hpo"]["parameters"]
+            dict_params = {}
+            for param, settings in hpo_params.items():
+                if settings["type"] == "float":
+                    dict_params[param] = trial.suggest_float(param, settings["min"], settings["max"], log=True)
+                elif settings["type"] == "int":
+                    dict_params[param] = trial.suggest_int(param, settings["min"], settings["max"], log=True)
+                elif settings["type"] == "categorical":
+                    dict_params[param] = trial.suggest_categorical(param, settings["values"])
+            return dict_params
+
+        return optuna_hp_space
+
     def hpo_t5(self):
-        updated_trainer = super().hpo(self.trainer)
-        self.trainer = updated_trainer
+        res = self.trainer.hyperparameter_search(
+            direction="minimize",
+            backend="optuna",
+            hp_space=self.get_optuna_space(),
+            n_trials=self.pipeline_config_args["hpo"]["nr_trials"],
+        )
+
+        best_run_params = res.hyperparameters
+        print(f'best run params: {best_run_params}')
+
+        if 'learning_rate' in best_run_params:
+            self.trainer.args.learning_rate = best_run_params['learning_rate']
+            print(f'Updated learning rate to: {self.trainer.args.learning_rate}')
+        if 'weight_decay' in best_run_params:
+            self.trainer.args.weight_decay = best_run_params['weight_decay']
+            print(f'Updated weight decay to: {self.trainer.args.weight_decay}')
+        if 'num_train_epochs' in best_run_params:
+            ###
+            # Optuna selects a model based on the last epoch, so varying this parameter is mainly used to avoid
+            # choosing the model that is "less prone to overfitting".
+            # The trainer however, takes the best model based on the validation loss, so we can train for longer.
+            ###
+            self.trainer.args.num_train_epochs = best_run_params['num_train_epochs'] * 2
+            print(f'Updated num train epochs to: {self.trainer.args.num_train_epochs}')
+        if 'per_device_train_batch_size' in best_run_params:
+            self.trainer.args.per_device_train_batch_size = best_run_params['per_device_train_batch_size']
+            print(f'Updated per device train batch size to: {self.trainer.args.per_device_train_batch_size}')
+
+        wandb.finish()
+        self.init_wandb_run(f'{self.model_name}_hpo_best_run')
+        self.trainer.args.report_to = "wandb"
+        self.trainer.args.logging_strategy = "epoch"
+        self.trainer.add_callback(WandbCallback())
+
+        self.trainer.train()
+        self.save_best_checkpoint(self.trainer)
 
     def train_t5(self):
         super().train(self.trainer)
