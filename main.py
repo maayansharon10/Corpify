@@ -90,7 +90,7 @@ def filter_bad_ascii(df: pd.DataFrame) -> pd.DataFrame:
     return filtered_df
 
 
-def create_datasets(data_path: str, max_dups, eval_size: float) -> dict:
+def create_datasets(data_path: str, out_dir: str, max_dups: int, eval_size: float) -> dict:
     assert os.path.exists(data_path)
 
     data = pd.read_csv(data_path)
@@ -113,6 +113,9 @@ def create_datasets(data_path: str, max_dups, eval_size: float) -> dict:
                                      'target': split['target']})
         dataset.set_format(type='torch', columns=['source', 'target'])
         datasets[split_name] = dataset
+        split_csv_path = os.path.join(out_dir, f'{split_name}_data.csv')
+        print(f'Saving split {split_name} to: {split_csv_path}')
+        split.to_csv(split_csv_path, index=False)
 
     return datasets
 
@@ -319,7 +322,7 @@ class BartBasedModel(RephrasingModel):
         else:
             tokenizer = AutoTokenizer.from_pretrained(self.model_name)
 
-        data = create_datasets(self.data_path, self.pipeline_config_args['max_dups'],
+        data = create_datasets(self.data_path, self.output_dir, self.pipeline_config_args['max_dups'],
                                self.pipeline_config_args["eval_size"])
         train_set = data['train'].map(self.get_data_preprocessing_func(tokenizer), batched=True)
         eval_set = data['validate'].map(self.get_data_preprocessing_func(tokenizer), batched=True)
@@ -380,7 +383,7 @@ class T5Model(RephrasingModel):
                     self.device)
             return AutoModelForSeq2SeqLM.from_pretrained(self.model_name).to(self.device)
 
-        data = create_datasets(self.data_path, self.pipeline_config_args['max_dups'],
+        data = create_datasets(self.data_path, self.output_dir, self.pipeline_config_args['max_dups'],
                                self.pipeline_config_args["eval_size"])
         train_set = data['train'].map(self.get_data_preprocessing_func(tokenizer), batched=True)
         eval_set = data['validate'].map(self.get_data_preprocessing_func(tokenizer), batched=True)

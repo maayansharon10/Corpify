@@ -52,7 +52,7 @@
     }
   },
   "model": {
-    "value": "t5-large",
+    "value": "flan-large",
     "choices": [
       "t5-detox",
       "t5-formal",
