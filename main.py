@@ -348,10 +348,6 @@ class BartBasedModel(RephrasingModel):
 
         return trainer
 
-    def hpo_bart(self):
-        updated_trainer = super().hpo(self.trainer)
-        self.trainer = updated_trainer
-
     def train_bart(self):
         super().train(self.trainer)
 
