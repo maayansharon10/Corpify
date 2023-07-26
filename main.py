@@ -458,7 +458,7 @@ def run_job_t5(args, output_dir):
 
 
 def main():
-    parser = argparse.ArgumentParser(description='BART Detox Training')
+    parser = argparse.ArgumentParser(description='Corpify training and eval script')
     parser.add_argument('--config-file', type=str, help='a config json file', default='config.json')
 
     args = parser.parse_args()
