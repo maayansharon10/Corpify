@@ -60,7 +60,7 @@ def train_model_pipeline(train_data_path, eval_data_path, test_data_path, result
 
     # save chosen model
     print(f'Chosen model: {chosen[MODEL_NAME]} with seed {chosen[SEED]}')
-    chosen[MODEL].save_model(f'model/{chosen[MODEL_NAME]}_{chosen[SEED]}.pt', push_to_hub=False)
+    chosen[MODEL].save_model(f'model/{chosen[MODEL_NAME]}_{chosen[SEED]}.pt')
     predict_on_test_set(chosen[MODEL_NAME], chosen[SEED], chosen[MODEL], test_dataset, results_path, pred_path)
 
 
@@ -131,7 +131,7 @@ def predict_on_test_set(model_name, seed, trainer, test_dataset, results_path, p
         f.write(f'predict time,{test_preds_trainer.metrics["test_runtime"]}')
     with open(predictions_path, 'w') as f:
         for input_sentence, label in zip(test_dataset['text'], test_preds):
-            f.write(f'{input_sentence} - {"corpy" if label == 1 else "regular"}\n')
+            f.write(f'{input_sentence},     {"corpy" if label == 1 else "regular"}\n')
 
 
 # ---------------------------- Helper functions ---------------------------- #

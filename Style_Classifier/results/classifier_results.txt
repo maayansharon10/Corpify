@@ -1,0 +1,10 @@
+roberta-base with seed 0 results:
+accuracy - 0.9603174603174603
+train time - 459.457 seconds
+roberta-base with seed 1 results:
+accuracy - 0.9682539682539683
+train time - 887.0935999999999 seconds
+roberta-base with seed 2 results:
+accuracy - 0.9444444444444444
+train time - 1337.8582 seconds
+predict time,3.2773
