@@ -166,7 +166,7 @@ if __name__ == '__main__':
     args = argparse.ArgumentParser(description='Trains a style classifier on the corpify dataset')
     args.add_argument('--train_data_path', type=str, default='data/train_data.csv')
     args.add_argument('--eval_data_path', type=str, default='data/eval_data.csv')
-    args.add_argument('--test_data_path', type=str, default='data/test_data.csv')
+    args.add_argument('--test_data_path', type=str, default='data/model_preds_test_data.csv')
     args.add_argument('--results_path', type=str, default='results/classifier_results.txt')
     args.add_argument('--pred_path', type=str, default='results/classifier_predictions.txt')
     args.add_argument('--nseeds', type=int, default=3)
