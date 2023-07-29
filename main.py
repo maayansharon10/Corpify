@@ -173,7 +173,6 @@ class RephrasingModel(ABC):
         bert_score = bert_score_metric.compute(predictions=preds, references=references, lang='en')
         rouge = rouge_metric.compute(predictions=preds, references=references)
         blue = blue_metric.compute(predictions=preds, references=references, max_order=2)
-        print(f'blue: {blue}')
         meteor = meteor_metric.compute(predictions=preds, references=references)
 
         return {bert_score_metric.name: np.array(bert_score['f1']).mean(),
