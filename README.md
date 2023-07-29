@@ -1,7 +1,5 @@
 # Corpify
 
-TODO: add general description
-
 ## Setup
 
 1. Clone the repository:
@@ -116,6 +114,7 @@ The job mode is defined in the configuration file under the `job_mode` key. The 
 The model is trained and evaluated, using the default hyperparameters.
 
 #### hpo-and-eval
+
 *Note: This mode is not supported for BART models.*
 
 In this job mode, hyperparameter optimization is performed using the Optuna library. The supported hyperparameters are:
@@ -170,3 +169,8 @@ The default model checkpoint is downloaded from Hugging-Face and evaluated on th
 `eval_size` is the portion of the data to be used for evaluation. Half of it is used for creating the dev-set and the
 rest is used for the test-set.
 
+### Character Limitation
+
+The tokenizers we use cannot process certain characters (with ASCII > 127 or ASCII < 32) that are sometimes introduced
+into automatically generated data. We have avoided this issue by rephrasing the examples we created using GPT; however,
+to prevent breaking with newer data, the code drops examples with illegal ASCII chars.
