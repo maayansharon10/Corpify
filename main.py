@@ -136,6 +136,7 @@ class RephrasingModel(ABC):
         self.output_dir: str = output_dir
         self.max_input_length: int = max_input_length
         self.load_from_checkpoint: bool = load_from_checkpoint
+        os.environ["WANDB_PROJECT"] = self.pipeline_config_args["wandb_project"]
 
     def init_wandb_run(self, name: str):
         wandb_config = {
@@ -145,7 +146,6 @@ class RephrasingModel(ABC):
             "eval_size": self.pipeline_config_args["eval_size"],
         }
 
-        os.environ["WANDB_PROJECT"] = self.pipeline_config_args["wandb_project"]
         wandb.init(
             project=self.pipeline_config_args["wandb_project"],
             config=wandb_config,
@@ -165,19 +165,20 @@ class RephrasingModel(ABC):
     def compute_metrics(self, p: EvalPrediction, eval_dataset: Dataset, tokenizer):
         bert_score_metric = load('bertscore')
         rouge_metric = load('rouge')  # Wraps up several variations of ROUGE, including ROUGE-L.
-        blue_metric = load('sacrebleu')  # SacreBLEU is a standard BLEU implementation that outputs the BLEU score.
+        blue_metric = load('bleu')
         meteor_metric = load('meteor')
 
         preds = self.decode_preds(p, tokenizer)
         references = eval_dataset['target']
         bert_score = bert_score_metric.compute(predictions=preds, references=references, lang='en')
         rouge = rouge_metric.compute(predictions=preds, references=references)
-        blue = blue_metric.compute(predictions=preds, references=references)
+        blue = blue_metric.compute(predictions=preds, references=references, max_order=2)
+        print(f'blue: {blue}')
         meteor = meteor_metric.compute(predictions=preds, references=references)
 
         return {bert_score_metric.name: np.array(bert_score['f1']).mean(),
                 rouge_metric.name: rouge['rougeL'],
-                blue_metric.name: blue['score'],
+                blue_metric.name: blue['bleu'],
                 meteor_metric.name: meteor['meteor']}
 
     def get_data_preprocessing_func(self, tokenizer):
