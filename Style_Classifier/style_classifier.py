@@ -13,11 +13,13 @@ import argparse
 from datasets import load_dataset, load_metric
 from transformers import AutoConfig, AutoTokenizer, Trainer, EvalPrediction, \
     TrainingArguments, AutoModelForSequenceClassification, DataCollatorWithPadding
+from scipy.special import softmax
 
 os.environ['TRANSFORMERS_CACHE'] ='.transformers_cache'
 os.environ['HF_HOME'] = '.hf_home'
 os.environ['HF_DATASETS_CACHE']= '.hf_datasets_cache'
 ACCURACY, MODEL_NAME, SEED, MODEL = 0, 1, 2, 3
+
 
 # ---------------------------- Fine-tuning pipeline ---------------------------- #
 
@@ -43,6 +45,7 @@ def train_model_pipeline(train_data_path, eval_data_path, test_data_path, result
     training_time = 0
 
     for seed in range(n_seeds):
+        print(f'Starting model {model_name} with seed {seed}')
         trainer, runtime = finetune_model(model_name, seed, train_dataset,
                                           eval_dataset)
         trainer.model.eval()
@@ -123,16 +126,14 @@ def predict_on_test_set(model_name, seed, trainer, test_dataset, results_path, p
     trainer.model.eval()
     test_dataset = tokenize_data(test_dataset, AutoTokenizer.from_pretrained(model_name))
     test_preds_trainer = trainer.predict(test_dataset)
-    test_preds = test_preds_trainer.predictions
-    test_preds = np.argmax(test_preds, axis=1)
+    test_preds = softmax(test_preds_trainer.predictions,axis=1)
 
     # write test results to files
     with open(results_path, 'a') as f:
         f.write(f'predict time,{test_preds_trainer.metrics["test_runtime"]}')
     with open(predictions_path, 'w') as f:
         for input_sentence, label in zip(test_dataset['text'], test_preds):
-            f.write(f'{input_sentence},     {"corpy" if label == 1 else "regular"}\n')
-
+            f.write(f'{input_sentence} XXX {label[0]} XXX {label[1]}\n')
 
 # ---------------------------- Helper functions ---------------------------- #
 
@@ -169,7 +170,7 @@ if __name__ == '__main__':
     args.add_argument('--test_data_path', type=str, default='data/model_preds_test_data.csv')
     args.add_argument('--results_path', type=str, default='results/classifier_results.txt')
     args.add_argument('--pred_path', type=str, default='results/classifier_predictions.txt')
-    args.add_argument('--nseeds', type=int, default=3)
+    args.add_argument('--nseeds', type=int, default=1)
     args.add_argument('--model', type=str, default="roberta-base")
     args = args.parse_args()
     train_model_pipeline(args.train_data_path, args.eval_data_path, args.test_data_path, args.results_path, args.pred_path, args.model, args.nseeds)
