@@ -154,6 +154,8 @@ the checkpoint is defined in the configuration file under the `initial_checkpoin
 "initial_checkpoint": "./results/2023-07-22_13_04_16/t5-large_best_checkpoint",
 ```
 
+We made the checkpoints of our two best models (`flan-large`, `t5-large`) available for download from `./Checkpoints`.
+
 #### eval-zero-shot
 
 The default model checkpoint is downloaded from Hugging-Face and evaluated on the test set.

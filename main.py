@@ -99,6 +99,11 @@ def create_datasets(data_path: str, out_dir: str, max_dups: int, eval_size: floa
     data.columns.values[1] = 'target'
     data.index.name = 'id'
     data.reset_index(inplace=True)
+
+    def length(row):
+        words = row.split()
+        return len(words)
+
     train_data, test_data = split_data(data, max_dups, eval_size)
     val_data, test_data = split_data(test_data, max_dups, eval_size=0.5)
 
@@ -108,6 +113,10 @@ def create_datasets(data_path: str, out_dir: str, max_dups: int, eval_size: floa
     datasets = {'train': None, 'validate': None, 'test': None}
 
     for split_name, split in splits.items():
+        split['source_length'] = split['source'].apply(length)
+        split['target_length'] = split['target'].apply(length)
+        print(f'{split_name} source MSL: {split["source_length"].mean()}, target MSL: {split["target_length"].mean()}')
+
         # Create dataset
         dataset = Dataset.from_dict({'source': split['source'],
                                      'target': split['target']})
@@ -116,6 +125,10 @@ def create_datasets(data_path: str, out_dir: str, max_dups: int, eval_size: floa
         split_csv_path = os.path.join(out_dir, f'{split_name}_data.csv')
         print(f'Saving split {split_name} to: {split_csv_path}')
         split.to_csv(split_csv_path, index=False)
+
+    data['source_length'] = data['source'].apply(length)
+    data['target_length'] = data['target'].apply(length)
+    print(f'Full source MSL: {data["source_length"].mean()}, target MSL: {data["target_length"].mean()}')
 
     return datasets
 
