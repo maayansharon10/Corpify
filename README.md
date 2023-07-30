@@ -105,6 +105,14 @@ The model is defined in the configuration file under the `model` key. For exampl
 }
 ```
 
+#### Available Fine-Tuned Models
+
+We have made the two best models we've pretrained available for download. You can find them here:
+
+https://huggingface.co/noystl/corpify-flan-large
+
+https://huggingface.co/noystl/corpify-t5-large
+
 ### Job Modes
 
 The job mode is defined in the configuration file under the `job_mode` key. The following modes are available:
@@ -153,8 +161,6 @@ the checkpoint is defined in the configuration file under the `initial_checkpoin
 ```
 "initial_checkpoint": "./results/2023-07-22_13_04_16/t5-large_best_checkpoint",
 ```
-
-We made the checkpoints of our two best models (`flan-large`, `t5-large`) available for download from `./Checkpoints`.
 
 #### eval-zero-shot
 
