@@ -111,7 +111,7 @@ We have made the two best models we've pretrained available for download. You ca
 
 https://huggingface.co/noystl/corpify-flan-large
 
-https://huggingface.co/noystl/corpify-t5-large
+https://huggingface.co/noystl/corpify_t5_large
 
 ### Job Modes
 
