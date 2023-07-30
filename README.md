@@ -182,3 +182,7 @@ rest is used for the test-set.
 The tokenizers we use cannot process certain characters (with ASCII > 127 or ASCII < 32) that are sometimes introduced
 into automatically generated data. We have avoided this issue by rephrasing the examples we created using GPT; however,
 to prevent breaking with newer data, the code drops examples with illegal ASCII chars.
+
+## Evaluation process
+
+To examine our raw human annoation or re run our human annotation evaluation process and examine the results, see Evaluation_Data_And_Annotation directory, specifically human_eval.ipynb file 
