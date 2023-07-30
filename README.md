@@ -16,7 +16,7 @@
 
 4. Activate the virtual environment:
 
-   ``` source myenv/bin/activate ```
+   ``` source myenv/bin/activate.csh ```
 
 5. Install requirements:
 
