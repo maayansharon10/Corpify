@@ -1,5 +1,10 @@
 # Corpify
 
+Corpify is a project with the goal of developing a "corpy" textual style-transfer model. This model changes informal and casual English text to a more professional and workplace-appropriate style. The repository provided contains:
+
+1. The Corpify dataset, a parallel dataset to train and evaluate models for the corpy textual style-transfer assignment, is  available through HuggingFace: https://huggingface.co/datasets/maayans/Corpify_Dataset/.
+2. The code for fine-tuning and evaluating language models on this style-transfer task. We've made two of our fine-tuned models accessible via HuggingFace: https://huggingface.co/noystl/corpify-flan-large, https://huggingface.co/noystl/corpify_t5_large
+
 ## Setup
 
 1. Clone the repository:
@@ -186,6 +191,3 @@ to prevent breaking with newer data, the code drops examples with illegal ASCII 
 ## Evaluation process
 
 To examine our raw human annoation or re run our human annotation evaluation process and examine the results, see Evaluation_Data_And_Annotation directory, specifically human_eval.ipynb file
-
-## Dataset
-We've made the parallel dataset collected for this repo available through HuggingFace: https://huggingface.co/datasets/maayans/Corpify_Dataset/
