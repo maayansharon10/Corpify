@@ -191,3 +191,9 @@ to prevent breaking with newer data, the code drops examples with illegal ASCII 
 ## Evaluation process
 
 To examine our raw human annoation or re run our human annotation evaluation process and examine the results, see Evaluation_Data_And_Annotation directory, specifically human_eval.ipynb file
+
+## Contact Us
+If you have any questions regarding this project, please don't hesitate to ask! You can contact us via our emails:
+* Maayan Sharon - maayan.sharon@mail.huji.ac.il
+* Nitzan Barzilay - nitzan.barzilay@mail.huji.ac.il
+* Noy Sternlicht - noy.sternlicht@mail.huji.ac.il
