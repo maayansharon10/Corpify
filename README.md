@@ -185,4 +185,7 @@ to prevent breaking with newer data, the code drops examples with illegal ASCII 
 
 ## Evaluation process
 
-To examine our raw human annoation or re run our human annotation evaluation process and examine the results, see Evaluation_Data_And_Annotation directory, specifically human_eval.ipynb file 
+To examine our raw human annoation or re run our human annotation evaluation process and examine the results, see Evaluation_Data_And_Annotation directory, specifically human_eval.ipynb file
+
+## Dataset
+We've made the parallel dataset collected for this repo available through HuggingFace: https://huggingface.co/datasets/maayans/Corpify_Dataset/
